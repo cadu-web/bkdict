@@ -24,6 +24,14 @@
     <string>© 2026 BKDG. Todos os direitos reservados.</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <!-- Atualização automática (Sparkle): o appcast sai com cada release de scripts/release.sh, e a chave pública
+         confere a assinatura EdDSA de cada atualização; a privada fica no Keychain de quem publica (conta "bkdict"). -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/cadu-web/bkdict/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>ztUCpNSlQaagPDMY05cojivrziuYnun9s40joEKw3LM=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>

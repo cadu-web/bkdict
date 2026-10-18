@@ -128,6 +128,25 @@ swift build          # compila
 
 O identificador `co.bkdg.bkdict` é fixo para o macOS manter as permissões de Microfone e Acessibilidade entre builds.
 
+### Publicar uma versão
+
+```sh
+# 1. Suba CFBundleShortVersionString (ex.: 0.2.0) e CFBundleVersion (inteiro, sempre maior) em Resources/Info.plist
+# 2. Publique (requer create-dmg, .NET 10 SDK e o gh logado na cadu-web)
+scripts/release.sh "O que mudou nesta versão"
+```
+
+O script gera o DMG e o ZIP do Mac, o ZIP do Windows (com o .NET embutido), o `appcast.xml` assinado, e cria a release `vX.Y.Z` em `cadu-web/bkdict`.
+
+**Atualização automática:**
+
+- **No Mac**, o [Sparkle](https://sparkle-project.org) consulta o `appcast.xml` da release mais recente. Ele instala a versão nova quando a pessoa aceita; dá também para procurar manualmente em **Procurar atualizações…**, no menu do app.
+- **No Windows**, o app consulta a release mais recente ao abrir e, se houver versão nova, avisa na bandeja com o link para baixar.
+
+Cada atualização do Mac é assinada com uma chave EdDSA. A pública está no `Info.plist` (`SUPublicEDKey`); a privada fica no Keychain de quem publica, na conta `bkdict`. **Sem a chave privada, nenhum app instalado aceita uma atualização nova.** Faça backup dela com `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account bkdict -x bkdict-sparkle.key` e guarde num cofre de senhas, nunca no repositório.
+
+Enquanto o repositório for privado, os downloads do whisper, do appcast e das versões dão 404 para quem não está logado. A atualização automática e a instalação do whisper no Mac passam a funcionar sozinhas quando ele ficar público.
+
 ### Dependências instaladas no primeiro uso
 
 O app baixa as dependências de endereços fixos, definidos em `Sources/Bkdict/Dependency.swift`:
@@ -135,17 +154,17 @@ O app baixa as dependências de endereços fixos, definidos em `Sources/Bkdict/D
 | Dependência | Origem |
 |---|---|
 | Ollama | Release oficial mais recente: `github.com/ollama/ollama/releases/latest/download/ollama-darwin.tgz` |
-| whisper | Compilado pela gente, porque o whisper.cpp não publica binário para macOS: release `whisper-v1.9.5` de `cadu-web/bkdict`, arquivo `whisper-server-macos.tgz` |
+| whisper | Compilado pela gente, porque o whisper.cpp não publica binário para macOS: release `whisper-v1.9.5` de `cadu-web/bkdict` (pré-lançamento), arquivo `whisper-server-macos.tgz`, conferido por SHA-256 |
 
 Para gerar o whisper (estático, Intel + Apple Silicon, com Metal) e publicar a release:
 
 ```sh
 brew install cmake
 scripts/build-whisper.sh   # gera dist/whisper-server-macos.tgz
-gh release create whisper-v1.9.5 dist/whisper-server-macos.tgz -R cadu-web/bkdict
+gh release create whisper-v1.9.5 dist/whisper-server-macos.tgz -R cadu-web/bkdict --prerelease
 ```
 
-Ao trocar a versão do whisper.cpp, mude `WHISPER_VERSION` no script, publique numa release nova e atualize a URL em `Dependency.swift`.
+Ao trocar a versão do whisper.cpp, mude `WHISPER_VERSION` no script, publique numa release nova e atualize a URL e o SHA-256 (o script imprime) em `Dependency.swift`. A release do whisper é pré-lançamento para não virar a "mais recente" que a atualização automática consulta.
 
 ## Licença
 

@@ -3,8 +3,9 @@
 # em dist/whisper-server-macos.tgz, o arquivo que o app baixa no primeiro uso (ver Dependency.whisper).
 # O whisper.cpp não publica binário para macOS, por isso a gente compila. Requer: brew install cmake.
 #
-# Ao mudar WHISPER_VERSION, publique o pacote numa release nova e atualize a URL em Sources/Bkdict/Dependency.swift:
-#   gh release create whisper-$WHISPER_VERSION dist/whisper-server-macos.tgz -R cadu-web/bkdict
+# Ao mudar WHISPER_VERSION, publique o pacote numa release nova (como pré-lançamento, para não virar a "latest" que a
+# atualização automática consulta) e atualize a URL e o SHA-256 em Sources/Bkdict/Dependency.swift:
+#   gh release create whisper-$WHISPER_VERSION dist/whisper-server-macos.tgz -R cadu-web/bkdict --prerelease
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -37,4 +38,5 @@ codesign --force --sign - "$STAGE/whisper-server"
 mkdir -p dist
 tar -czf "$OUT" -C "$STAGE" whisper-server LICENSE-whisper.cpp
 echo "Packaged $OUT ($(du -h "$OUT" | cut -f1), $(lipo -archs "$STAGE/whisper-server"))"
+echo "SHA-256 $(shasum -a 256 "$OUT" | cut -d" " -f1)"
 rm -rf "$STAGE"

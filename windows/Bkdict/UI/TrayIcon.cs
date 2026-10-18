@@ -10,11 +10,12 @@ public sealed class TrayIcon : IDisposable
 {
     private readonly Forms.NotifyIcon icon;
     private readonly Forms.ToolStripMenuItem statusItem;
+    private readonly Forms.ContextMenuStrip menu;
 
     public TrayIcon(Action open, Action copyLast, Action quit)
     {
         statusItem = new Forms.ToolStripMenuItem("Iniciando…") { Enabled = false };
-        var menu = new Forms.ContextMenuStrip();
+        menu = new Forms.ContextMenuStrip();
         menu.Items.Add(statusItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Abrir Bkdict", null, (_, _) => open());
@@ -44,6 +45,15 @@ public sealed class TrayIcon : IDisposable
             var tip = "Bkdict — " + value;
             icon.Text = tip.Length > 63 ? tip[..62] + "…" : tip;
         }
+    }
+
+    /// Offers a newer release: a menu item that opens its download page, and a one-time notification.
+    public void ShowUpdate(string version, string url)
+    {
+        void Open() => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        menu.Items.Insert(2, new Forms.ToolStripMenuItem($"Baixar a versão {version}…", null, (_, _) => Open()));
+        icon.BalloonTipClicked += (_, _) => Open();
+        icon.ShowBalloonTip(8000, "Bkdict", $"A versão {version} está disponível. Clique para baixar.", Forms.ToolTipIcon.Info);
     }
 
     private static Icon LoadIcon()

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Combine
+import Sparkle
 
 /// Menu bar app that wires the global shortcuts to recording, transcription and insertion.
 final class AppController: NSObject, NSApplicationDelegate {
@@ -19,6 +20,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let overlay = OverlayWindow()
     private lazy var mainWindow = MainWindowController(model: model)
     private let hotkey = HotkeyMonitor()
+    /// Checks the release appcast on its own schedule (SUEnableAutomaticChecks) and installs updates on request.
+    private let updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     private var statusItem: NSStatusItem!
     private let statusLine = NSMenuItem(title: "Iniciando…", action: nil, keyEquivalent: "")
@@ -359,6 +362,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let copyLast = NSMenuItem(title: "Copiar última transcrição", action: #selector(copyLast), keyEquivalent: "c")
         copyLast.target = self
         menu.addItem(copyLast)
+
+        let update = NSMenuItem(title: "Procurar atualizações…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+        update.target = updater
+        menu.addItem(update)
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Sair do Bkdict", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))

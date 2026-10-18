@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A command-line tool the app installs by itself on first launch, into Application Support, so nobody needs
@@ -17,6 +18,8 @@ final class Dependency: ObservableObject, @unchecked Sendable {
         folder: "whisper",
         executable: "whisper-server",
         archive: URL(string: "https://github.com/cadu-web/bkdict/releases/download/whisper-v1.9.5/whisper-server-macos.tgz")!,
+        // Printed by `shasum -a 256 dist/whisper-server-macos.tgz` after scripts/build-whisper.sh; update with the URL.
+        sha256: "30ab65d25f698e2a07b3ca6d51131eee15bffddf31b14a6b311aa7bffb127281",
         fallbacks: ["/opt/homebrew/bin/whisper-server", "/usr/local/bin/whisper-server"]
     )
 
@@ -26,6 +29,7 @@ final class Dependency: ObservableObject, @unchecked Sendable {
         folder: "ollama",
         executable: "ollama",
         archive: URL(string: "https://github.com/ollama/ollama/releases/latest/download/ollama-darwin.tgz")!,
+        sha256: nil, // "latest" changes with every Ollama release, so there is no fixed digest to pin.
         fallbacks: ["/Applications/Ollama.app/Contents/Resources/ollama", "/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"]
     )
 
@@ -33,15 +37,17 @@ final class Dependency: ObservableObject, @unchecked Sendable {
     private let folder: String
     private let executable: String
     private let archive: URL
+    private let sha256: String?
     private let fallbacks: [String]
 
     @Published private(set) var state: State
 
-    private init(title: String, folder: String, executable: String, archive: URL, fallbacks: [String]) {
+    private init(title: String, folder: String, executable: String, archive: URL, sha256: String?, fallbacks: [String]) {
         self.title = title
         self.folder = folder
         self.executable = executable
         self.archive = archive
+        self.sha256 = sha256
         self.fallbacks = fallbacks
         let present = Self.locate(folder: folder, executable: executable, fallbacks: fallbacks) != nil
         _state = Published(initialValue: present ? .installed : .missing)
@@ -83,6 +89,12 @@ final class Dependency: ObservableObject, @unchecked Sendable {
             defer { try? fileManager.removeItem(at: file) }
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 throw InstallError("o download respondeu \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+            }
+            if let sha256 {
+                let digest = SHA256.hash(data: try Data(contentsOf: file, options: .mappedIfSafe))
+                guard digest.map({ String(format: "%02x", $0) }).joined() == sha256 else {
+                    throw InstallError("o pacote baixado não é o esperado e foi descartado")
+                }
             }
 
             // Unpack next to the final folder and swap it in only when complete, so a failed install leaves nothing half-done.

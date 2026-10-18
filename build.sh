@@ -16,6 +16,9 @@ cp -R Resources/ProviderIcons "$APP/Contents/Resources/ProviderIcons"
 # Fontes da marca (IBM Plex, Zilla Slab), registradas pelo ATSApplicationFontsPath do Info.plist.
 cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 cp Resources/MenuBarIcon.png Resources/MenuBarIcon@2x.png "$APP/Contents/Resources/"
+# Sparkle (atualização automática), achado pelo rpath @executable_path/../Frameworks do Package.swift.
+mkdir -p "$APP/Contents/Frameworks"
+cp -R "$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/Sparkle.framework" "$APP/Contents/Frameworks/"
 
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$ICONSET"
@@ -24,6 +27,8 @@ for size in 16 32 128 256 512; do
     sips -z $((size * 2)) $((size * 2)) Resources/AppIcon-1024.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+# Nested code is signed first, inside out, then the app itself.
+codesign --force --deep --sign - "$APP/Contents/Frameworks/Sparkle.framework"
 # Pin the designated requirement to the bundle id so macOS keeps the
 # Accessibility/Microphone grants across rebuilds (ad-hoc defaults to the cdhash).
 codesign --force --sign - -r='designated => identifier "co.bkdg.bkdict"' "$APP"

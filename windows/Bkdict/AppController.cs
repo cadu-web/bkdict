@@ -110,6 +110,9 @@ public sealed class AppController
 
         await model.Ollama.InstallAsync();
         if (model.AiProvider == LlmProvider.Ollama) await model.Ollama.StartAsync();
+
+        if (await Updater.CheckAsync() is { } release)
+            tray?.ShowUpdate(release.Version.ToString(), release.Url);
     }
 
     public void Shutdown()
