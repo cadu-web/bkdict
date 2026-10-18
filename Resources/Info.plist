@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Bkdict</string>
+    <key>CFBundleDisplayName</key>
+    <string>Bkdict</string>
+    <key>CFBundleIdentifier</key>
+    <string>co.bkdg.bkdict</string>
+    <key>CFBundleExecutable</key>
+    <string>Bkdict</string>
+    <key>ATSApplicationFontsPath</key>
+    <string>Fonts</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 BKDG. Todos os direitos reservados.</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>O Bkdict usa o microfone para transcrever o que você dita.</string>
+</dict>
+</plist>

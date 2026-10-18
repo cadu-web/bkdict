@@ -1,0 +1,13 @@
+.build/
+dist/
+.DS_Store
+*.xcodeproj/
+.swiftpm/
+
+# Windows
+windows/**/bin/
+windows/**/obj/
+windows/Bkdict/Assets/AppIcon.ico
+
+# scripts/gen-icons.mjs (npm i --no-save sharp)
+node_modules/
