@@ -2,6 +2,29 @@ import SwiftUI
 
 // MARK: - Settings
 
+/// Automatic keeps Bluetooth headphones playing music: it records from the Mac's microphone instead of theirs.
+private struct MicrophoneRow: View {
+    @ObservedObject var model: AppModel
+    @State private var devices = Microphones.inputs
+
+    var body: some View {
+        SettingRow(title: "Microfone", detail: "No automático, com fone Bluetooth o Bkdict usa o microfone do Mac, e a música não pausa") {
+            Picker("", selection: $model.microphone) {
+                Text("Automático").tag(Microphones.automatic)
+                Divider()
+                ForEach(devices) { Text($0.name).tag($0.uid) }
+                // A chosen microphone that is disconnected stays selectable, so the setting is not lost.
+                if model.microphone != Microphones.automatic, !devices.contains(where: { $0.uid == model.microphone }) {
+                    Text("Microfone desconectado").tag(model.microphone)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 220)
+            .onAppear { devices = Microphones.inputs }
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var model: AppModel
 
@@ -21,6 +44,7 @@ struct SettingsView: View {
             }
 
             SectionCard(title: "Ditado") {
+                MicrophoneRow(model: model)
                 SettingRow(title: "Idioma") {
                     Picker("", selection: $model.language) {
                         Text("Português").tag("pt")

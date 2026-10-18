@@ -33,6 +33,9 @@ final class AppModel: ObservableObject {
             Self.apply(appearance)
         }
     }
+    @Published var microphone = Settings.microphone {
+        didSet { Settings.microphone = microphone }
+    }
     @Published var soundsEnabled = Settings.soundsEnabled {
         didSet { Settings.soundsEnabled = soundsEnabled }
     }

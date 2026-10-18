@@ -53,6 +53,12 @@ enum Settings {
         set { defaults.set(newValue.rawValue, forKey: "appearance") }
     }
 
+    /// The microphone's device UID, or `Microphones.automatic`.
+    static var microphone: String {
+        get { defaults.string(forKey: "microphone") ?? Microphones.automatic }
+        set { defaults.set(newValue, forKey: "microphone") }
+    }
+
     static var soundsEnabled: Bool {
         get { defaults.object(forKey: "soundsEnabled") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "soundsEnabled") }

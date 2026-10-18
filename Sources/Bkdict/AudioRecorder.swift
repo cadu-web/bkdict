@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 
 /// Captures the default microphone and resamples it to 16 kHz mono, which is what Whisper expects.
@@ -17,6 +18,11 @@ final class AudioRecorder {
     func start() throws {
         lock.withLock { samples.removeAll(keepingCapacity: true) }
         let input = engine.inputNode
+        // Point the input at the resolved microphone before reading its format (see Microphones).
+        if var device = Microphones.resolve(Settings.microphone)?.id, let unit = input.audioUnit {
+            AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                 &device, UInt32(MemoryLayout<AudioDeviceID>.size))
+        }
         let format = input.outputFormat(forBus: 0)
         converter = AVAudioConverter(from: format, to: targetFormat)
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
