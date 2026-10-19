@@ -23,6 +23,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     @MainActor private lazy var detector = MeetingDetector()
     private var offerTimeout: DispatchWorkItem?
     private var mistakeTimeout: DispatchWorkItem?
+    private lazy var onboarding = OnboardingWindowController(model: model) { [weak self] in self?.mainWindow.show() }
     private lazy var mainWindow = MainWindowController(model: model, meetings: MainActor.assumeIsolated { meetings })
     private let meetingItem = NSMenuItem(title: "Gravar reunião", action: nil, keyEquivalent: "")
     private let hotkey = HotkeyMonitor()
@@ -48,7 +49,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         icon?.accessibilityDescription = "BKDict"
         statusItem.button?.image = icon
         buildMenu()
-        mainWindow.show()
+        // The first launch opens the setup, which asks for each permission in turn; later ones open the app.
+        let onboarding = OnboardingWindowController.isNeeded
+        if onboarding { self.onboarding.show() } else { mainWindow.show() }
 
         recorder.onLevel = { [weak self] level in
             DispatchQueue.main.async { self?.overlay.state.level = level }
@@ -78,8 +81,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             Task { @MainActor in await self?.prepareEngine() }
         }
 
-        model.requestMicrophone()
-        startHotkeyWhenTrusted()
+        if !onboarding { model.requestMicrophone() }
+        startHotkeyWhenTrusted(prompt: !onboarding)
         Task { @MainActor in await prepareEngine() }
         Task { @MainActor in await installOllama() }
     }
@@ -141,8 +144,9 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     // MARK: - Permissions
 
-    private func startHotkeyWhenTrusted() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+    /// `prompt` shows the system's Accessibility request; the first-launch setup asks in its own words instead.
+    private func startHotkeyWhenTrusted(prompt: Bool = true) {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt] as CFDictionary
         if AXIsProcessTrustedWithOptions(options), hotkey.start() { return }
 
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in

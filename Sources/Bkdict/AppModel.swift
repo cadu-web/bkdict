@@ -319,6 +319,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Puts BKDict in the Accessibility list (macOS adds it on the first trust check) and opens it there.
+    func requestAccessibility() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+        openAccessibilitySettings()
+    }
+
     func openAccessibilitySettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }

@@ -122,6 +122,12 @@ public sealed class AppModel : ObservableObject
         set { settings.Microphone = value; Save(); }
     }
 
+    public bool OnboardingDone
+    {
+        get => settings.OnboardingDone;
+        set { settings.OnboardingDone = value; Save(); }
+    }
+
     public bool ShowsDictationBar
     {
         get => settings.ShowsDictationBar;

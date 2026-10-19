@@ -11,35 +11,46 @@ struct ModelsView: View {
             PageHeader(title: "Modelos",
                        subtitle: "Transcrição e IA rodam neste Mac, sem custo, ou na sua conta, com a sua chave de API.")
 
-            ModelCard(
-                title: "Transcrição",
-                subtitle: "Transforma sua voz em texto",
-                local: Binding(get: { model.transcriptionEngine == .local },
-                               set: { model.transcriptionEngine = $0 ? .local : .cloud }),
-                localDetail: "Whisper · privado e grátis",
-                cloudDetail: "OpenAI ou Groq"
-            ) {
-                if model.transcriptionEngine == .local {
-                    ForEach(ModelManager.catalog) { item in
-                        LocalModelRow(item: item, model: model, manager: manager,
-                                      divider: item.id != ModelManager.catalog.last?.id)
-                    }
-                    if let error = manager.lastError { ErrorRow(message: error) }
-                } else {
-                    ProviderRow(selection: $model.transcriptionProvider, providers: CloudTranscriber.providers)
-                    APIKeyRow(model: model, provider: model.transcriptionProvider)
-                    ControlRow(divider: false) {
-                        RowTitle(title: "Modelo")
-                    } control: {
-                        ModelMenu(selection: $model.transcriptionModel,
-                                  options: CloudTranscriber.models(for: model.transcriptionProvider))
-                    }
-                }
-            }
+            TranscriptionCard(model: model, manager: manager)
 
             AIModelCard(model: model, ollama: model.ollama)
         }
         .onAppear { manager.refresh() }
+    }
+}
+
+/// Where transcription runs: a Whisper model on this Mac, or a cloud provider with the user's key.
+/// Shared by Modelos and the first-launch setup.
+struct TranscriptionCard: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var manager: ModelManager
+
+    var body: some View {
+        ModelCard(
+            title: "Transcrição",
+            subtitle: "Transforma sua voz em texto",
+            local: Binding(get: { model.transcriptionEngine == .local },
+                           set: { model.transcriptionEngine = $0 ? .local : .cloud }),
+            localDetail: "Whisper · privado e grátis",
+            cloudDetail: "OpenAI ou Groq"
+        ) {
+            if model.transcriptionEngine == .local {
+                ForEach(ModelManager.catalog) { item in
+                    LocalModelRow(item: item, model: model, manager: manager,
+                                  divider: item.id != ModelManager.catalog.last?.id)
+                }
+                if let error = manager.lastError { ErrorRow(message: error) }
+            } else {
+                ProviderRow(selection: $model.transcriptionProvider, providers: CloudTranscriber.providers)
+                APIKeyRow(model: model, provider: model.transcriptionProvider)
+                ControlRow(divider: false) {
+                    RowTitle(title: "Modelo")
+                } control: {
+                    ModelMenu(selection: $model.transcriptionModel,
+                              options: CloudTranscriber.models(for: model.transcriptionProvider))
+                }
+            }
+        }
     }
 }
 

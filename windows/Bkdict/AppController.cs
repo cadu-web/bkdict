@@ -97,7 +97,11 @@ public sealed class AppController
         };
 
         if (!hotkey.Start()) SetStatus("Não foi possível ativar os atalhos globais");
-        ShowMainWindow();
+        // The first launch opens the setup (microphone and transcription); later ones open the app.
+        if (OnboardingWindow.IsNeeded(model))
+            new OnboardingWindow(model, chooseModel: () => ShowMainWindow("models"), onFinish: () => ShowMainWindow()).Show();
+        else
+            ShowMainWindow();
         _ = StartEnginesAsync();
     }
 
@@ -347,9 +351,12 @@ public sealed class AppController
         tray?.Dispose();
     }
 
-    public void ShowMainWindow()
+    public void ShowMainWindow() => ShowMainWindow(null);
+
+    private void ShowMainWindow(string? page)
     {
         mainWindow ??= new MainWindow(model);
+        if (page != null) mainWindow.ShowPage(page);
         mainWindow.ShowAndActivate();
     }
 

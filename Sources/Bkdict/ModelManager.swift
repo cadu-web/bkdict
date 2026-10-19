@@ -20,6 +20,9 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
         WhisperModel(id: "ggml-large-v3.bin", name: "Large v3", detail: "O mais preciso, o mais lento", size: "3,1 GB"),
     ]
 
+    /// What a new install downloads by itself: the best balance of accuracy and speed.
+    static var recommended: WhisperModel { catalog.first { $0.id == "ggml-large-v3-turbo-q5_0.bin" }! }
+
     @Published private(set) var installed: Set<String> = []
     @Published private(set) var progress: [String: Double] = [:]
     @Published private(set) var lastError: String?

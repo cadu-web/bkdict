@@ -36,6 +36,9 @@ public sealed class AppSettings
     /// The microphone's MMDevice id, or Microphones.Automatic.
     public string Microphone { get; set; } = Platform.Microphones.Automatic;
 
+    /// Set once the first-launch setup is finished (or skipped with everything already in place).
+    public bool OnboardingDone { get; set; }
+
     /// The dictation bar while idle; it always appears while dictating.
     public bool ShowsDictationBar { get; set; } = true;
 

@@ -124,6 +124,12 @@ enum Settings {
     }
 
     /// File name of the whisper.cpp model in `modelsDirectory`.
+    /// Set once the first-launch setup is finished (or skipped with everything already granted).
+    static var onboardingDone: Bool {
+        get { defaults.bool(forKey: "onboardingDone") }
+        set { defaults.set(newValue, forKey: "onboardingDone") }
+    }
+
     static var localModel: String {
         get { defaults.string(forKey: "localModel") ?? "ggml-large-v3-turbo-q5_0.bin" }
         set { defaults.set(newValue, forKey: "localModel") }

@@ -6,23 +6,33 @@ import SwiftUI
 /// Automatic keeps Bluetooth headphones playing music: it records from the Mac's microphone instead of theirs.
 private struct MicrophoneRow: View {
     @ObservedObject var model: AppModel
-    @State private var devices = Microphones.inputs
 
     var body: some View {
         SettingRow(title: "Microfone", detail: "No automático, com fone Bluetooth o BKDict usa o microfone do Mac, e a música não pausa") {
-            Picker("", selection: $model.microphone) {
-                Text("Automático").tag(Microphones.automatic)
-                Divider()
-                ForEach(devices) { Text($0.name).tag($0.uid) }
-                // A chosen microphone that is disconnected stays selectable, so the setting is not lost.
-                if model.microphone != Microphones.automatic, !devices.contains(where: { $0.uid == model.microphone }) {
-                    Text("Microfone desconectado").tag(model.microphone)
-                }
-            }
-            .labelsHidden()
-            .frame(width: 220)
-            .onAppear { devices = Microphones.inputs }
+            MicrophonePicker(selection: $model.microphone)
         }
+    }
+}
+
+/// "Automático" or one of the connected microphones. Also used by the first-launch setup.
+struct MicrophonePicker: View {
+    @Binding var selection: String
+    var width: CGFloat = 220
+    @State private var devices = Microphones.inputs
+
+    var body: some View {
+        Picker("", selection: $selection) {
+            Text("Automático").tag(Microphones.automatic)
+            Divider()
+            ForEach(devices) { Text($0.name).tag($0.uid) }
+            // A chosen microphone that is disconnected stays selectable, so the setting is not lost.
+            if selection != Microphones.automatic, !devices.contains(where: { $0.uid == selection }) {
+                Text("Microfone desconectado").tag(selection)
+            }
+        }
+        .labelsHidden()
+        .frame(width: width)
+        .onAppear { devices = Microphones.inputs }
     }
 }
 

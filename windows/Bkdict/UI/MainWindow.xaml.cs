@@ -48,6 +48,10 @@ public partial class MainWindow : Window
         PageHost.MaxWidth = own ? double.PositiveInfinity : 900;
     }
 
+    /// Opens a page by its sidebar tag ("models", "settings"…).
+    public void ShowPage(string tag) =>
+        Nav.SelectedItem = Nav.Items.OfType<ListBoxItem>().First(i => (string)i.Tag == tag);
+
     public void ShowAndActivate()
     {
         Show();
