@@ -138,10 +138,10 @@ public partial class OverlayWindow : Window
         Root.ContextMenuOpening += (_, _) => Root.ContextMenu = BuildMenu();
         Root.ContextMenu = BuildMenu();
         DpiChanged += (_, _) => Place();
-        // With several monitors the bar sits on the one with the mouse, and moves when the mouse does.
+        // With several monitors the bar sits on the one with the mouse, and moves when the mouse does, recording or not.
         screenTimer.Tick += (_, _) =>
         {
-            if (phase == OverlayPhase.Hidden && !dragging && MouseMonitor().Monitor != currentMonitor) Place();
+            if (!dragging && MouseMonitor().Monitor != currentMonitor) Place();
         };
         screenTimer.Start();
         offerTimer.Tick += (_, _) =>

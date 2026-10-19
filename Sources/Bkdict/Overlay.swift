@@ -137,9 +137,9 @@ final class OverlayWindow {
         liveObservation = state.$liveVisible.combineLatest(state.$meetingSince).dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.layoutLive() }
         }
-        // With several monitors the bar sits on the one with the mouse, and moves when the mouse does.
+        // With several monitors the bar sits on the one with the mouse, and moves when the mouse does, recording or not.
         screenTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            guard let self, self.state.phase == .hidden, self.dragOffset == nil, Self.mouseScreen != self.currentScreen else { return }
+            guard let self, self.dragOffset == nil, Self.mouseScreen != self.currentScreen else { return }
             self.layout()
         }
     }
