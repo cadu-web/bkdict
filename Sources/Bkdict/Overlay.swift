@@ -95,7 +95,8 @@ final class OverlayWindow {
         static let busy = NSSize(width: 260, height: 40)
         static let unplaced = NSSize(width: 380, height: 124)
         // On a side the whole bar stands up.
-        static let hoveredSide = NSSize(width: 52, height: 148)
+        // Just the two buttons; what dictates shows in a hint beside it (HintPanel).
+        static let hoveredSide = NSSize(width: 40, height: 70)
         static let recordingSide = NSSize(width: 40, height: 104)
         static let busySide = NSSize(width: 40, height: 40)
         static let meeting = NSSize(width: 112, height: 28)
@@ -153,6 +154,7 @@ final class OverlayWindow {
     private var offerObservation: Any?
     private var liveObservation: Any?
     private let livePanel = LivePanel()
+    private let hintPanel = HintPanel()
     private var screenTimer: Timer?
     private var currentScreen: NSScreen?
 
@@ -167,6 +169,7 @@ final class OverlayWindow {
         guard dragOffset == nil else { return }
         guard let size = currentSize else {
             panel.orderOut(nil)
+            hintPanel.hide()
             return
         }
         guard let screen = Self.mouseScreen else { return }
@@ -175,6 +178,17 @@ final class OverlayWindow {
         panel.setFrame(NSRect(origin: origin, size: size), display: true, animate: animated)
         panel.orderFrontRegardless()
         layoutLive()
+        layoutHint()
+    }
+
+    /// On a side, the hovered bar is only its buttons; "Ditar" and its keys sit beside it, at the microphone.
+    private func layoutHint() {
+        guard state.phase == .hidden, state.hovering, state.edge != .bottom, state.meetingSince == nil, state.offer == nil,
+              !state.mistake, dragOffset == nil, panel.isVisible else {
+            hintPanel.hide()
+            return
+        }
+        hintPanel.show(beside: panel.frame, edge: state.edge, keys: state.dictateKeys)
     }
 
     /// The offer slides in from the edge, compact, then opens into the full card.
@@ -267,6 +281,7 @@ final class OverlayWindow {
         if dragOffset == nil {
             dragOffset = NSPoint(x: mouse.x - panel.frame.minX, y: mouse.y - panel.frame.minY)
             state.dragging = true
+            hintPanel.hide()
         }
         guard let offset = dragOffset, let screen = Self.mouseScreen else { return }
         panel.setFrameOrigin(NSPoint(x: mouse.x - offset.x, y: mouse.y - offset.y))
@@ -401,14 +416,10 @@ private struct BarView: View {
 
     private var idleSide: some View {
         VStack(spacing: 6) {
-            Text("Ditar")
-                .font(Theme.body(11, .medium))
-                .foregroundStyle(Theme.onAccent)
-            if !state.dictateKeys.isEmpty { KeyCaps(keys: state.dictateKeys, onAccent: true) }
             BarButton(systemImage: "mic.fill", fill: Theme.accentOnTinta, help: "Ditar sem segurar a tecla", action: state.onDictate)
             BarButton(systemImage: "record.circle", fill: Theme.onAccent.opacity(0.12), help: "Gravar reunião", action: state.onStartMeeting)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
     }
 
     private var recordingSide: some View {
@@ -857,6 +868,70 @@ private struct MeetingControls: View {
 }
 
 /// The live transcript: a floating panel next to the bar while a meeting records.
+/// "Ditar ⇧ dir. →" beside the hovered bar on a side, pointing at it. It never takes the mouse, so the bar keeps its hover.
+private final class HintPanel {
+    private let panel: NSPanel
+
+    init() {
+        panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel.level = .statusBar
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+    }
+
+    func show(beside bar: NSRect, edge: DockEdge, keys: [String]) {
+        let view = NSHostingView(rootView: HintView(edge: edge, keys: keys))
+        let size = view.fittingSize
+        // Level with the microphone, the bar's first button (6 pt padding + half of 26).
+        let y = (bar.maxY - 19 - size.height / 2).rounded()
+        let x = edge == .right ? bar.minX - 8 - size.width : bar.maxX + 8
+        panel.contentView = view
+        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+        guard !panel.isVisible else { return }
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    func hide() {
+        panel.orderOut(nil)
+    }
+}
+
+private struct HintView: View {
+    let edge: DockEdge
+    let keys: [String]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if edge == .left { arrow }
+            Text("Ditar")
+                .font(Theme.body(13, .medium))
+                .foregroundStyle(Theme.onAccent)
+            if !keys.isEmpty { KeyCaps(keys: keys, onAccent: true) }
+            if edge == .right { arrow }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(BarView.shape.fill(Color(hex: 0x0A0A0A).opacity(0.94)))
+        .overlay(BarView.shape.strokeBorder(Theme.onAccent.opacity(0.14)))
+        .fixedSize()
+    }
+
+    private var arrow: some View {
+        Image(systemName: edge == .right ? "arrow.right" : "arrow.left")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.onAccent.opacity(0.6))
+    }
+}
+
 private final class LivePanel {
     static let size = NSSize(width: 340, height: 260)
     weak var state: OverlayState? {
