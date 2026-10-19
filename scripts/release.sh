@@ -44,6 +44,11 @@ rm -f "dist/BKDict-windows-$VERSION.zip"
 (cd "$(dirname "$WINDOWS")" && zip -qr - BKDict) > "dist/BKDict-windows-$VERSION.zip"
 rm -rf "$(dirname "$WINDOWS")"
 
+# Instaladores sem versão no nome, para os botões do README (releases/latest/download/…) sempre baixarem a última.
+# O ZIP do Mac fica com a versão, porque é o que o appcast aponta.
+cp "dist/BKDict-$VERSION.dmg" dist/BKDict.dmg
+cp "dist/BKDict-windows-$VERSION.zip" dist/BKDict-windows.zip
+
 gh release create "$TAG" -R "$REPO" --latest --title "BKDict $VERSION" --notes "$NOTES" \
-    "dist/BKDict-$VERSION.dmg" "dist/BKDict-$VERSION.zip" dist/appcast.xml "dist/BKDict-windows-$VERSION.zip"
+    dist/BKDict.dmg "dist/BKDict-$VERSION.zip" dist/appcast.xml dist/BKDict-windows.zip
 echo "Publicada: https://github.com/$REPO/releases/tag/$TAG"
