@@ -23,7 +23,7 @@ Você escolhe onde cada parte roda:
 ## Recursos
 
 - **Segure e fale:** segure `Fn` (ou o atalho que você definir), fale e solte. O texto é colado no app em foco.
-- **Mãos livres:** `Fn + Espaço` começa a gravar sem segurar a tecla; o mesmo atalho para.
+- **Mãos livres:** dois toques no `Fn` (ou `Fn + Espaço`) começam a gravar sem segurar a tecla; um toque no `Fn` para e cola.
 - **Modo comando:** selecione um texto, segure `Fn + ⌃` e diga a instrução ("traduz para inglês", "deixa mais formal").
 - **Transforms:** reescritas acionadas por atalho (formal, resumo, tópicos, email, tradução). Crie as suas, com sugestões geradas pela IA, ou aplique uma automaticamente em todo ditado.
 - **Atalhos:** até 2 por ação. Pode ser uma tecla F, uma combinação, um modificador sozinho (⇧ direito, Fn) ou um botão extra do mouse.
@@ -48,7 +48,7 @@ No macOS, as chaves de API ficam no **Keychain**; no Windows, no **Gerenciador d
 | Ação | Padrão |
 |---|---|
 | Ditar (segurar) | `Fn` |
-| Mãos livres | `Fn + Espaço` |
+| Mãos livres | Dois toques no `Fn`, ou `Fn + Espaço` (um toque no `Fn` para) |
 | Modo comando (segurar) | `Fn + ⌃` |
 | Transform 1…9 | `Fn + 1…9` (ou o atalho de cada transform) |
 | Colar / copiar a última transcrição | `⌃⌘V` / `⌃⌘C` |
