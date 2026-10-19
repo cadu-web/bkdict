@@ -78,7 +78,8 @@ public partial class HomePage : UserControl
         var actions = (FrameworkElement)button.Parent;
         button.Content = "\uE73E";
         button.SetResourceReference(ForegroundProperty, "BrandAccent");
-        button.ToolTip = "Copiado";
+        var balloon = (ToolTip)button.ToolTip;
+        balloon.Content = "Copiado";
         actions.Opacity = 1;
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
         timer.Tick += (_, _) =>
@@ -86,7 +87,7 @@ public partial class HomePage : UserControl
             timer.Stop();
             button.Content = "\uE8C8";
             button.ClearValue(ForegroundProperty);
-            button.ToolTip = "Copiar";
+            balloon.Content = "Copiar";
             actions.ClearValue(OpacityProperty);
         };
         timer.Start();
