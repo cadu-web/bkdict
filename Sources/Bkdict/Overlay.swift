@@ -228,12 +228,15 @@ private struct BarView: View {
     @ObservedObject var state: OverlayState
 
     private static let tinta = Color(hex: 0x0A0A0A)
+    static let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
 
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Self.tinta.opacity(isIdleHandle ? 0.55 : 0.94)))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.onAccent.opacity(isIdleHandle ? 0.25 : 0.14)))
+            // 10 pt continuous corners, by request: the one deliberate exception to the brand's 4 pt limit.
+            .background(Self.shape.fill(Self.tinta.opacity(isIdleHandle ? 0.55 : 0.94)))
+            .overlay(Self.shape.strokeBorder(Theme.onAccent.opacity(isIdleHandle ? 0.25 : 0.14)))
+            .clipShape(Self.shape)
             .contentShape(Rectangle())
             .onHover { hovering in
                 if state.phase == .hidden, !state.dragging { state.hovering = hovering }
@@ -395,7 +398,8 @@ private struct BarButton: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.onAccent)
                 .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: Theme.radius).fill(fill))
+                // Inset 4–7 pt from the bar's edge, so a smaller radius keeps the corners concentric.
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(fill))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -476,9 +480,9 @@ private struct DockGuideView: View {
         ZStack(alignment: .topLeading) {
             ForEach(model.slots) { slot in
                 let active = slot.edge == model.nearest
-                RoundedRectangle(cornerRadius: Theme.radius)
+                BarView.shape
                     .fill(active ? Theme.accentOnTinta.opacity(0.28) : Color(hex: 0x0A0A0A).opacity(0.18))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.radius)
+                    .overlay(BarView.shape
                         .strokeBorder(active ? Theme.accentOnTinta : Theme.onAccent.opacity(0.6),
                                       style: StrokeStyle(lineWidth: active ? 2 : 1, dash: active ? [] : [4, 3])))
                     .frame(width: slot.rect.width, height: slot.rect.height)
