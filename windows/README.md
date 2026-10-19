@@ -35,6 +35,21 @@ Depois:
 
 O app inicia o `ollama serve` quando o Ollama é a IA escolhida e o encerra ao sair; um Ollama que já estava rodando fica como estava.
 
+## Barra de ditado
+
+Uma barra no pé da tela, no monitor onde está o mouse. Parada, é uma barrinha; com o mouse em cima mostra **Ditar**, o
+atalho e um botão de microfone (dita sem segurar a tecla). Gravando, mostra as ondas, **X** para cancelar e **■** para
+finalizar e colar. Arraste para encaixá-la embaixo, à esquerda ou à direita (nas laterais fica em pé); o clique direito
+tem colar a última transcrição, microfone, posição, esconder por 1 hora e abrir o Bkdict. Pode ser desligada em
+**Ajustes** (aí só aparece durante o ditado). A barra nunca pega o foco, então o texto vai para o app em que você está.
+
+## Onde o ditado é colado
+
+Antes de colar, o Bkdict pergunta à UI Automation o que está em foco. Num campo de texto, cola. Onde com certeza não há
+campo (botão, lista, área de trabalho ou pasta do Explorer) não cola nem mexe na área de transferência: o ditado fica
+no histórico e a barra mostra "Clique num campo de texto e use {atalho} para colar". Quando não dá para saber (alguns
+navegadores e apps Electron), cola como antes. A área de transferência anterior é restaurada depois de cada colagem.
+
 ## Atalhos padrão
 
 O Windows não enxerga a tecla `Fn` (quem cuida dela é o próprio teclado), então `Ctrl + Win` faz o papel dela:
