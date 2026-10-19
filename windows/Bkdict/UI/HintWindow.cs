@@ -10,7 +10,7 @@ using Bkdict.Platform;
 
 namespace Bkdict.UI;
 
-/// "Ditar →" beside the hovered bar on a side, pointing at it, level with the microphone. It never takes focus or
+/// "Ditar Shift dir. →" beside the hovered bar on a side, pointing at it, level with the microphone. It never takes focus or
 /// the mouse (WS_EX_TRANSPARENT), so the bar under the cursor keeps its hover.
 internal sealed class HintWindow : Window
 {
@@ -58,7 +58,7 @@ internal sealed class HintWindow : Window
     }
 
     /// `bar` is the bar's rectangle in physical pixels; the hint goes on its inner side, the arrow toward it.
-    public void ShowBeside(Rect bar, string edge, double scale)
+    public void ShowBeside(Rect bar, string edge, double scale, IReadOnlyList<string> keys)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         if (edge == OverlayWindow.Edges.Left) row.Children.Add(Arrow("←", new Thickness(0, 0, 8, 0)));
@@ -67,7 +67,8 @@ internal sealed class HintWindow : Window
             Text = "Ditar", FontSize = 13, FontWeight = FontWeights.Medium, Foreground = Brush(Osso),
             VerticalAlignment = VerticalAlignment.Center,
         });
-        if (edge == OverlayWindow.Edges.Right) row.Children.Add(Arrow("→", new Thickness(8, 0, 0, 0)));
+        if (keys.Count > 0) row.Children.Add(OverlayWindow.KeyCaps(keys, new Thickness(8, 0, 0, 0)));
+        if (edge == OverlayWindow.Edges.Right) row.Children.Add(Arrow("→", new Thickness(keys.Count > 0 ? 5 : 8, 0, 0, 0)));
         root.Child = row;
 
         root.Measure(new Size(double.PositiveInfinity, HintHeight));

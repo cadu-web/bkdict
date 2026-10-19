@@ -628,7 +628,7 @@ public partial class OverlayWindow : Window
         return row;
     }
 
-    /// On a side, just the two buttons; "Ditar" shows in the hint beside the bar (HintWindow).
+    /// On a side, just the two buttons; "Ditar" and its keys show in the hint beside the bar (HintWindow).
     private UIElement IdleSideContent()
     {
         var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -978,7 +978,7 @@ public partial class OverlayWindow : Window
             Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
         if (liveOpen && meetingElapsed != null) livePanel.PlaceBeside(rect, edge, area.Scale);
         else livePanel.Hide();
-        if (ShowsHint) hint.ShowBeside(rect, edge, area.Scale);
+        if (ShowsHint) hint.ShowBeside(rect, edge, area.Scale, dictateKeys);
         else hint.Hide();
     }
 
