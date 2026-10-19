@@ -554,7 +554,7 @@ private struct OfferView: View {
         Group {
             if vertical {
                 VStack(spacing: 8) {
-                    Image(systemName: "person.2.wave.2").font(.system(size: 13)).foregroundStyle(Theme.accentOnTinta)
+                    Image(systemName: "video").font(.system(size: 13)).foregroundStyle(Theme.accentOnTinta)
                     BarButton(systemImage: offer.isStop ? "stop.fill" : "record.circle", fill: Theme.accentOnTinta, help: offer.action, action: accept)
                     BarButton(systemImage: "xmark", fill: Theme.onAccent.opacity(0.12), help: "Agora não", action: dismiss)
                 }

@@ -58,7 +58,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .home: return "house"
         case .history: return "clock"
-        case .meetings: return "person.2.wave.2"
+        case .meetings: return "video"
         case .transforms: return "wand.and.stars"
         case .dictionary: return "character.book.closed"
         case .snippets: return "text.badge.plus"

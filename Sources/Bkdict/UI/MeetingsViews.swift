@@ -103,7 +103,7 @@ private struct RecordingBanner: View {
 private struct EmptyMeetings: View {
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "person.2.wave.2")
+            Image(systemName: "video")
                 .font(.system(size: 28))
                 .foregroundStyle(Theme.accent)
             Text("Nenhuma reunião gravada")
