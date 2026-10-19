@@ -1,64 +1,69 @@
-import AudioToolbox
 import AVFoundation
 
-/// Captures the default microphone and resamples it to 16 kHz mono, which is what Whisper expects.
-final class AudioRecorder {
+/// Captures the chosen microphone (see Microphones) as 16 kHz mono, which is what Whisper expects.
+///
+/// Uses a capture session, which opens one specific device and converts to the format we ask for. AVAudioEngine,
+/// used before, keeps the previous device's format after a microphone switch: the tap then fails, or raises an
+/// exception that kills the app (AirPods at 24 kHz against a 48 kHz built-in microphone).
+final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    enum Failure: LocalizedError {
+        case noMicrophone
+
+        var errorDescription: String? { "Microfone indisponível" }
+    }
+
     static let sampleRate: Double = 16_000
 
     var onLevel: (Float) -> Void = { _ in }
 
-    private let engine = AVAudioEngine()
-    private let targetFormat = AVAudioFormat(
-        commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false
-    )!
-    private var converter: AVAudioConverter?
+    private var session: AVCaptureSession?
+    /// Delivers the buffers in order; `stop()` drains it so the last words are not cut.
+    private let queue = DispatchQueue(label: "co.bkdg.bkdict.recorder")
     private var samples: [Float] = []
     private let lock = NSLock()
 
     func start() throws {
         lock.withLock { samples.removeAll(keepingCapacity: true) }
-        let input = engine.inputNode
-        // Point the input at the resolved microphone before reading its format (see Microphones).
-        if var device = Microphones.resolve(Settings.microphone)?.id, let unit = input.audioUnit {
-            AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
-                                 &device, UInt32(MemoryLayout<AudioDeviceID>.size))
-        }
-        let format = input.outputFormat(forBus: 0)
-        converter = AVAudioConverter(from: format, to: targetFormat)
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-            self?.process(buffer)
-        }
-        engine.prepare()
-        try engine.start()
+        // Core Audio's device UID is the capture device's uniqueID.
+        let chosen = Microphones.resolve(Settings.microphone).flatMap { AVCaptureDevice(uniqueID: $0.uid) }
+        guard let device = chosen ?? AVCaptureDevice.default(for: .audio) else { throw Failure.noMicrophone }
+
+        let session = AVCaptureSession()
+        let input = try AVCaptureDeviceInput(device: device)
+        let output = AVCaptureAudioDataOutput()
+        output.audioSettings = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: Self.sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsNonInterleaved: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        output.setSampleBufferDelegate(self, queue: queue)
+        guard session.canAddInput(input), session.canAddOutput(output) else { throw Failure.noMicrophone }
+        session.addInput(input)
+        session.addOutput(output)
+        session.startRunning()
+        self.session = session
     }
 
     /// Stops capture and returns the recorded samples.
     func stop() -> [Float] {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        session?.stopRunning()
+        session = nil
+        queue.sync {}
         return lock.withLock { samples }
     }
 
-    private func process(_ buffer: AVAudioPCMBuffer) {
-        guard let converter else { return }
-        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
-        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
-
-        var consumed = false
-        var error: NSError?
-        converter.convert(to: output, error: &error) { _, status in
-            if consumed {
-                status.pointee = .noDataNow
-                return nil
-            }
-            consumed = true
-            status.pointee = .haveData
-            return buffer
-        }
-        guard error == nil, let channel = output.floatChannelData?[0] else { return }
-
-        let chunk = Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
+        var length = 0
+        var pointer: UnsafeMutablePointer<CChar>?
+        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length,
+                                          dataPointerOut: &pointer) == kCMBlockBufferNoErr, let pointer else { return }
+        let count = length / MemoryLayout<Float>.size
+        let chunk = pointer.withMemoryRebound(to: Float.self, capacity: count) { Array(UnsafeBufferPointer(start: $0, count: count)) }
         lock.withLock { samples.append(contentsOf: chunk) }
 
         let power = chunk.reduce(0) { $0 + $1 * $1 } / Float(max(chunk.count, 1))
