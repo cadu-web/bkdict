@@ -45,7 +45,7 @@ public partial class OverlayWindow : Window
 
     // Sizes in DIPs, as on the Mac.
     private static readonly Size Idle = new(44, 8), IdleSide = new(8, 44);
-    private static readonly Size Hovered = new(204, 36), HoveredSide = new(52, 148);
+    private static readonly Size Hovered = new(204, 36), HoveredSide = new(40, 70);
     private static readonly Size Recording = new(300, 40), RecordingSide = new(40, 104);
     private static readonly Size Busy = new(260, 40), BusySide = new(40, 40);
     // A dictation with nowhere to paste: lying against a side edge too, like the cards below.
@@ -78,6 +78,7 @@ public partial class OverlayWindow : Window
     private readonly DispatcherTimer expandTimer = new() { Interval = TimeSpan.FromSeconds(0.8) };
     private DispatcherTimer? resizeTimer;
     private readonly LivePanelWindow livePanel = new();
+    private readonly HintWindow hint = new();
     private bool liveOpen;
     private IReadOnlyList<string> pasteKeys = Array.Empty<string>();
     private bool copied;
@@ -627,18 +628,13 @@ public partial class OverlayWindow : Window
         return row;
     }
 
+    /// On a side, just the two buttons; "Ditar" and its keys show in the hint beside the bar (HintWindow).
     private UIElement IdleSideContent()
     {
         var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        var label = Text("Ditar", 11);
-        label.HorizontalAlignment = HorizontalAlignment.Center;
-        column.Children.Add(label);
-        if (dictateKeys.Count > 0) column.Children.Add(KeyCaps(dictateKeys, new Thickness(0, 6, 0, 0)));
-        var mic = ActionButton("", Accent, "Ditar sem segurar a tecla", () => OnDictate());
-        mic.Margin = new Thickness(0, 6, 0, 0);
-        column.Children.Add(mic);
+        column.Children.Add(ActionButton("", Accent, "Ditar sem segurar a tecla", () => OnDictate()));
         var record = RecordMeetingButton();
-        record.Margin = new Thickness(0, 4, 0, 0);
+        record.Margin = new Thickness(0, 6, 0, 0);
         column.Children.Add(record);
         return column;
     }
@@ -779,7 +775,7 @@ public partial class OverlayWindow : Window
         HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
     };
 
-    private static UIElement KeyCaps(IReadOnlyList<string> keys, Thickness margin)
+    internal static UIElement KeyCaps(IReadOnlyList<string> keys, Thickness margin)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = margin, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         foreach (var key in keys)
@@ -971,6 +967,7 @@ public partial class OverlayWindow : Window
         {
             Hide();
             livePanel.Hide();
+            hint.Hide();
             return;
         }
         var area = MouseMonitor();
@@ -981,7 +978,12 @@ public partial class OverlayWindow : Window
             Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
         if (liveOpen && meetingElapsed != null) livePanel.PlaceBeside(rect, edge, area.Scale);
         else livePanel.Hide();
+        if (ShowsHint) hint.ShowBeside(rect, edge, area.Scale, dictateKeys);
+        else hint.Hide();
     }
+
+    /// The hovered idle bar on a side shows "Ditar" and its keys beside it.
+    private bool ShowsHint => phase == OverlayPhase.Hidden && hovering && Side && !ShowsMeetingPill && !ShowsOffer && !dragging;
 
     private void HideFor(TimeSpan duration)
     {
@@ -1025,6 +1027,7 @@ public partial class OverlayWindow : Window
             dragOffset = new Native.POINT { x = start.x - window.left, y = start.y - window.top };
             dragging = true;
             livePanel.Hide();
+            hint.Hide();
             Root.CaptureMouse();
         }
         Native.GetWindowRect(handle, out var current);
