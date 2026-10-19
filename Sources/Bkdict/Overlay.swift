@@ -28,6 +28,10 @@ final class OverlayState: ObservableObject {
     @Published var phase: Phase = .hidden
     @Published var level: Float = 0
     @Published var hovering = false
+    /// The side bar's button under the pointer, named in a hint beside it.
+    @Published var sideHint: SideHint?
+
+    enum SideHint { case dictate, meeting }
     /// The dictation shortcut, shown when the idle bar is hovered.
     @Published var dictateKeys: [String] = []
     /// The shortcut that pastes the last dictation, for the "nowhere to paste" card.
@@ -128,7 +132,11 @@ final class OverlayWindow {
         state.onDragEnded = { [weak self] in self?.dragEnded() }
         state.onSelectEdge = { [weak self] in self?.dock(at: $0) }
         // Hover changes the size; layout is deferred so SwiftUI finishes the current update first.
+        hintObservation = state.$sideHint.removeDuplicates().dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.layoutHint() }
+        }
         hoverObservation = state.$hovering.dropFirst().sink { [weak self] _ in
+            // Not animated: a bar resizing under the pointer makes AppKit report it leaving and coming back, over and over.
             DispatchQueue.main.async { self?.layout() }
         }
         offerObservation = state.$offer.removeDuplicates().dropFirst().sink { [weak self] offer in
@@ -151,6 +159,7 @@ final class OverlayWindow {
     }
 
     private var hoverObservation: Any?
+    private var hintObservation: Any?
     private var offerObservation: Any?
     private var liveObservation: Any?
     private let livePanel = LivePanel()
@@ -159,36 +168,70 @@ final class OverlayWindow {
     private var currentScreen: NSScreen?
 
     func show(_ phase: OverlayState.Phase) {
+        let changed = phase != state.phase
         state.phase = phase
-        if phase != .hidden { state.hovering = false }
-        layout()
+        if phase != .hidden { state.hovering = false; state.sideHint = nil }
+        layout(animated: changed)
     }
 
     /// Re-anchors the bar, e.g. after the screens change.
     func layout(animated: Bool = false) {
         guard dragOffset == nil else { return }
+        let animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         guard let size = currentSize else {
-            panel.orderOut(nil)
             hintPanel.hide()
+            guard animates, panel.isVisible else { return panel.orderOut(nil) }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                panel.animator().alphaValue = 0
+            } completionHandler: { [weak self] in
+                guard let self, self.currentSize == nil else { return }
+                self.panel.orderOut(nil)
+                self.panel.alphaValue = 1
+            }
             return
         }
         guard let screen = Self.mouseScreen else { return }
         currentScreen = screen
-        let origin = Self.slot(state.edge, size: size, in: screen.visibleFrame)
-        panel.setFrame(NSRect(origin: origin, size: size), display: true, animate: animated)
+        let frame = NSRect(origin: Self.slot(state.edge, size: size, in: screen.visibleFrame), size: size)
+        guard animates, frame != panel.frame else {
+            panel.alphaValue = 1
+            panel.setFrame(frame, display: true)
+            panel.orderFrontRegardless()
+            layoutLive()
+            layoutHint()
+            return
+        }
+        // The bar grows out of its handle (or out of nothing, when the idle bar is off), like a spring settling.
+        if !panel.isVisible {
+            let handle = state.edge == .bottom ? Size.idle : Size.idleSide
+            panel.alphaValue = 0
+            panel.setFrame(NSRect(origin: Self.slot(state.edge, size: handle, in: screen.visibleFrame), size: handle), display: false)
+        }
         panel.orderFrontRegardless()
-        layoutLive()
-        layoutHint()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.28
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 1.1, 0.3, 1)
+            panel.animator().setFrame(frame, display: true)
+            panel.animator().alphaValue = 1
+        } completionHandler: { [weak self] in
+            self?.layoutLive()
+            self?.layoutHint()
+        }
     }
 
-    /// On a side, the hovered bar is only its buttons; "Ditar" and its keys sit beside it, at the microphone.
+    /// On a side, the hovered bar is only its buttons; the one under the pointer is named beside it, like a popover.
     private func layoutHint() {
-        guard state.phase == .hidden, state.hovering, state.edge != .bottom, state.meetingSince == nil, state.offer == nil,
-              !state.mistake, dragOffset == nil, panel.isVisible else {
+        guard let hint = state.sideHint, state.phase == .hidden, state.hovering, state.edge != .bottom,
+              state.meetingSince == nil, state.offer == nil, !state.mistake, dragOffset == nil, panel.isVisible else {
             hintPanel.hide()
             return
         }
-        hintPanel.show(beside: panel.frame, edge: state.edge, keys: state.dictateKeys)
+        switch hint {
+        // Centers of the two buttons: 6 pt padding + half of 26, then 6 pt spacing + another 26.
+        case .dictate: hintPanel.show(beside: panel.frame, edge: state.edge, centerFromTop: 19, title: "Ditar", keys: state.dictateKeys)
+        case .meeting: hintPanel.show(beside: panel.frame, edge: state.edge, centerFromTop: 51, title: "Gravar reunião", keys: [])
+        }
     }
 
     /// The offer slides in from the edge, compact, then opens into the full card.
@@ -347,7 +390,10 @@ private struct BarView: View {
 
     var body: some View {
         content
+            .id(contentKey)
+            .transition(.opacity)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeOut(duration: 0.18), value: contentKey)
             // 10 pt continuous corners, by request: the one deliberate exception to the brand's 4 pt limit.
             .background(Self.shape.fill(Self.tinta.opacity(isIdleHandle ? 0.55 : 0.94)))
             .overlay(Self.shape.strokeBorder(Theme.onAccent.opacity(isIdleHandle ? 0.25 : 0.14)))
@@ -355,6 +401,7 @@ private struct BarView: View {
             .contentShape(Rectangle())
             .onHover { hovering in
                 if state.phase == .hidden, !state.dragging { state.hovering = hovering }
+                if !hovering { state.sideHint = nil }
             }
             // Positions come from the mouse in screen coordinates: the window moves under the gesture.
             .gesture(
@@ -378,6 +425,15 @@ private struct BarView: View {
                 Button("Esconder por 1 hora", action: state.onHideForAnHour)
                 Button("Abrir o BKDict", action: state.onOpenApp)
             }
+    }
+
+    /// Which of the bar's layouts shows; a new one fades in while the bar grows or shrinks to it.
+    private var contentKey: String {
+        switch state.phase {
+        case .error: "error"
+        case .transforming: "transforming"
+        default: "\(state.phase)"
+        }
     }
 
     private var isIdleHandle: Bool {
@@ -416,8 +472,10 @@ private struct BarView: View {
 
     private var idleSide: some View {
         VStack(spacing: 6) {
-            BarButton(systemImage: "mic.fill", fill: Theme.accentOnTinta, help: "Ditar sem segurar a tecla", action: state.onDictate)
-            BarButton(systemImage: "record.circle", fill: Theme.onAccent.opacity(0.12), help: "Gravar reunião", action: state.onStartMeeting)
+            BarButton(systemImage: "mic.fill", fill: Theme.accentOnTinta, help: "Ditar sem segurar a tecla", action: state.onDictate,
+                      onHover: { state.sideHint = $0 ? .dictate : (state.sideHint == .dictate ? nil : state.sideHint) })
+            BarButton(systemImage: "record.circle", fill: Theme.onAccent.opacity(0.12), help: "Gravar reunião", action: state.onStartMeeting,
+                      onHover: { state.sideHint = $0 ? .meeting : (state.sideHint == .meeting ? nil : state.sideHint) })
         }
         .padding(.vertical, 6)
     }
@@ -523,6 +581,8 @@ private struct BarButton: View {
     let fill: Color
     let help: String
     let action: () -> Void
+    /// Set when the bar names the button in its own hint, in place of the system tooltip.
+    var onHover: ((Bool) -> Void)? = nil
 
     var body: some View {
         Button(action: action) {
@@ -535,8 +595,9 @@ private struct BarButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .help(onHover == nil ? help : "")
         .accessibilityLabel(help)
+        .onHover { onHover?($0) }
     }
 }
 
@@ -868,7 +929,7 @@ private struct MeetingControls: View {
 }
 
 /// The live transcript: a floating panel next to the bar while a meeting records.
-/// "Ditar Shift dir. →" beside the hovered bar on a side, pointing at it. It never takes the mouse, so the bar keeps its hover.
+/// "Ditar Shift dir. →" or "Gravar reunião →" beside the side bar's hovered button on a side, pointing at it. It never takes the mouse, so the bar keeps its hover.
 private final class HintPanel {
     private let panel: NSPanel
 
@@ -883,11 +944,10 @@ private final class HintPanel {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
     }
 
-    func show(beside bar: NSRect, edge: DockEdge, keys: [String]) {
-        let view = NSHostingView(rootView: HintView(edge: edge, keys: keys))
+    func show(beside bar: NSRect, edge: DockEdge, centerFromTop: CGFloat, title: String, keys: [String]) {
+        let view = NSHostingView(rootView: HintView(edge: edge, title: title, keys: keys))
         let size = view.fittingSize
-        // Level with the microphone, the bar's first button (6 pt padding + half of 26).
-        let y = (bar.maxY - 19 - size.height / 2).rounded()
+        let y = (bar.maxY - centerFromTop - size.height / 2).rounded()
         let x = edge == .right ? bar.minX - 8 - size.width : bar.maxX + 8
         panel.contentView = view
         panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
@@ -907,12 +967,13 @@ private final class HintPanel {
 
 private struct HintView: View {
     let edge: DockEdge
+    let title: String
     let keys: [String]
 
     var body: some View {
         HStack(spacing: 8) {
             if edge == .left { arrow }
-            Text("Ditar")
+            Text(title)
                 .font(Theme.body(13, .medium))
                 .foregroundStyle(Theme.onAccent)
             if !keys.isEmpty { KeyCaps(keys: keys, onAccent: true) }
