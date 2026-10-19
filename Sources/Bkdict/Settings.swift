@@ -65,6 +65,18 @@ enum Settings {
         set { defaults.set(newValue, forKey: "showsDictationBar") }
     }
 
+    /// Read the Mac's calendars (EventKit) to name meetings and suggest attendees (phase 4 of meetings).
+    static var useSystemCalendars: Bool {
+        get { defaults.bool(forKey: "useSystemCalendars") }
+        set { defaults.set(newValue, forKey: "useSystemCalendars") }
+    }
+
+    /// An iCal (.ics) address, e.g. Google Calendar's secret address.
+    static var calendarICS: String {
+        get { defaults.string(forKey: "calendarICS") ?? "" }
+        set { defaults.set(newValue, forKey: "calendarICS") }
+    }
+
     /// Offer to record when a call starts, and to stop when it ends (phase 2 of meetings).
     static var detectMeetings: Bool {
         get { defaults.object(forKey: "detectMeetings") as? Bool ?? true }

@@ -92,7 +92,7 @@ public static class Llm
     // rule that "Eles" lines belong to the others, keep small models from skipping sections or giving the others'
     // tasks to "você".
     private const string MeetingInstructions =
-        "Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \"[mm:ss] Quem: …\". \"Você\" é a pessoa que gravou; as outras falas vêm com o nome da pessoa ou \"Pessoa N\" (\"Eles\" quando não foi possível separar as vozes). Quem diz \"eu faço\" numa fala de outra pessoa é essa pessoa, não você.\n\n" +
+        "Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \"[mm:ss] Quem: …\". \"Você\" é a pessoa que gravou; as outras falas vêm com o nome da pessoa ou \"Pessoa N\" (\"Eles\" quando não foi possível separar as vozes). Quem diz \"eu faço\" numa fala de outra pessoa é essa pessoa, não você. A linha Convidados, se houver, serve só para reconhecer nomes ditos na conversa; não use para decidir quem disse cada fala.\n\n" +
         "Escreva em segunda pessoa: \"você\" para quem gravou, e os outros pelo nome (ou \"os participantes\"). Nas Tarefas, comece cada linha com o dono: \"Você:\", o nome da pessoa, ou \"Participantes:\" quando não der para saber.\n\n" +
         "Responda preenchendo exatamente o modelo que vem depois da transcrição: as quatro seções, nessa ordem, sem nada antes ou depois. Use só o que foi dito; não invente nomes, datas, números nem decisões. Seção sem conteúdo leva \"- Nenhuma.\".";
 
@@ -126,6 +126,17 @@ public static class Llm
             "Em vez da transcrição completa, estas são as anotações de cada parte da reunião, em ordem:\n\n"
             + string.Join("\n\n", notes) + $"\n\n{MeetingTemplate}", 300);
     }
+
+    private const string AskInstructions =
+        "Você responde perguntas sobre as reuniões gravadas pela pessoa. Você recebe trechos de uma ou mais reuniões " +
+        "(título, data, resumo e falas no formato [mm:ss] Quem: texto) e a pergunta. Responda só com o que está nos " +
+        "trechos, em poucas frases, no idioma da pergunta. Quando a informação vier de uma fala, cite a origem como " +
+        "[título · mm:ss], com o título da reunião e o horário da fala. Se a resposta não estiver nos trechos, diga que " +
+        "não encontrou isso nas reuniões.";
+
+    /// Answers a question from the meetings' excerpts chosen by MeetingSearch (docs/reunioes.md, "Fase 4").
+    public static Task<string> AskMeetingsAsync(string question, string context) =>
+        CompleteAsync(AskInstructions, $"Trechos das reuniões:\n{context}\n\nPergunta: {question}", 180);
 
     /// Content-aware transform suggestions.
     public static async Task<List<Transform>> SuggestTransformsAsync(string text)

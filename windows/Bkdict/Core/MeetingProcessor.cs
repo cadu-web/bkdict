@@ -141,8 +141,8 @@ public sealed class MeetingProcessor
     {
         meeting.Status = Meeting.Summarizing;
         MeetingStore.Save(meeting);
-        var transcript = meeting.TranscriptText();
-        if (transcript.Length == 0)
+        var transcript = meeting.TranscriptForAi();
+        if (meeting.Segments.Count == 0)
         {
             meeting.Summary = "## Resumo\nNada foi dito nesta gravação.";
         }

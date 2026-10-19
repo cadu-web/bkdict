@@ -42,6 +42,9 @@ public sealed class AppSettings
     /// Offers to record when a call starts in Zoom, Teams, Meet and others (docs/reunioes.md, "Fase 2").
     public bool DetectMeetings { get; set; } = true;
 
+    /// An iCal (.ics) address whose events name the meetings and their invitees (docs/reunioes.md, "Fase 4").
+    public string? CalendarIcsUrl { get; set; }
+
     /// Where the dictation bar docks: "bottom", "left" or "right" (see OverlayWindow.Edges).
     public string DictationBarEdge { get; set; } = "bottom";
 

@@ -200,6 +200,50 @@ Nomes automáticos pelo Zoom/Meet: exigem ler a interface de cada app de chamada
 Chrome só expõe a página a apps assistivos com uma extensão), e não dá para acertar sem chamadas reais para testar.
 Fica para quando houver como testar; os convidados do calendário (fase 4) vão sugerir nomes.
 
-## Fora das fases 1, 2 e 3
+# Fase 4 — calendário, perguntas e tarefas
 
-Calendário, perguntar sobre as reuniões, tarefas como ações (fase 4).
+## Calendário
+
+- **Mac**: os calendários que já estão no macOS (Google, Outlook, iCloud… adicionados em Ajustes do Sistema →
+  Contas de Internet), pelo EventKit, com acesso total aos eventos (`NSCalendarsFullAccessUsageDescription`).
+  Pedido de permissão ao ligar a opção.
+- **Mac e Windows**: endereço iCal (`.ics`) colado em Ajustes — no Google Agenda, "Endereço secreto no formato iCal";
+  no Outlook, "Publicar calendário" → link ICS. Lido de novo a cada 15 min. Leitura: `VEVENT` com `DTSTART`, `DTEND`
+  (ou `DURATION`), `SUMMARY`, `ATTENDEE`/`ORGANIZER` (`CN=`, ou o e-mail antes do `@`), `STATUS:CANCELLED` ignorado,
+  datas `Z`, com `TZID` (fuso pelo nome) ou flutuantes (fuso local), linhas dobradas; repetição `RRULE` com
+  `FREQ=DAILY|WEEKLY`, `INTERVAL`, `BYDAY`, `UNTIL`, `COUNT` e `EXDATE`, expandida só para hoje ± 1 dia.
+- Ajustes, seção **Calendário**: Mac — "Usar os calendários do Mac" (padrão: desligado) e "Endereço iCal"; Windows —
+  "Endereço iCal". Um texto curto embaixo diz como pegar o endereço no Google e no Outlook.
+- **Ao começar a gravar** (à mão ou pelo convite): o evento que está acontecendo agora (começa até 10 min depois ou
+  já começou e não acabou; o de início mais próximo) dá o **título** (`<título do evento> · dd/MM, HH:mm`) e a lista de
+  **convidados** (`attendees`, sem a própria pessoa quando der para saber — no EventKit, `isCurrentUser`).
+- Convidados ajudam a dar nome: no painel Vozes, o campo de nome sugere os convidados (menu ao lado do campo,
+  "Convidados ▾", com os nomes; escolher preenche e salva). Na transcrição enviada à IA, uma linha antes:
+  `Convidados: Ana, Bruno` — a instrução diz que é só para reconhecer nomes ditos, não para atribuir falas.
+
+## Perguntar sobre as reuniões
+
+- No topo da tela Reuniões (lista) e no detalhe de uma reunião: campo **Pergunte sobre as suas reuniões** /
+  **Pergunte sobre esta reunião**, Enter envia.
+- Busca local antes da IA: palavras da pergunta (minúsculas, sem acento, sem palavras de até 2 letras e sem as de uma
+  lista curta de palavras comuns do português) contadas em título, resumo e transcrição; as 3 reuniões com mais
+  acertos (no detalhe, só a reunião aberta). Contexto, até 8.000 caracteres: para cada reunião, o título, a data, o
+  resumo e as falas que têm alguma palavra da pergunta, com uma fala antes e uma depois, no formato da transcrição.
+  Nenhuma reunião com acerto: as 3 mais recentes, só com o resumo.
+- Resposta da IA (a de Modelos): instrução — responder só com o que está nas reuniões, em poucas frases, citando a
+  origem como `[título · mm:ss]` quando vier de uma fala; dizer que não encontrou quando não estiver lá.
+- A resposta aparece num cartão abaixo do campo, com skeleton enquanto espera; cada citação `[título · mm:ss]` é
+  clicável e abre a reunião na aba Transcrição. Não guarda histórico de perguntas.
+
+## Tarefas como ações
+
+- No bloco **Tarefas** do resumo, o quadradinho de cada tarefa marca feita/não feita (texto riscado e cinza),
+  guardado em `doneTasks` (lista com o texto das tarefas feitas).
+- Ações no cabeçalho do bloco: **Copiar** (lista `- [ ] Dono: tarefa` / `- [x] …`), **E-mail** (abre um e-mail novo
+  com assunto `Tarefas — <título>` e a lista no corpo, por `mailto:`) e, no Mac, **Lembretes** (cria um lembrete por
+  tarefa não feita, na lista padrão do app Lembretes, com nota `<título da reunião>`; pede permissão de Lembretes na
+  primeira vez — `NSRemindersFullAccessUsageDescription`). Depois de criar, mostra `N lembretes criados` por 3 s.
+
+## Depois
+
+Nomes automáticos pelo Zoom/Meet (ver fase 3), aviso antes de uma reunião do calendário começar.

@@ -63,6 +63,8 @@ Com **Detectar reuniões** ligado (Ajustes), quando Zoom, Teams, Webex, Slack, D
 
 Os outros participantes são separados por voz (`Pessoa 1`, `Pessoa 2`…) pelo [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), baixado na primeira reunião para `%LOCALAPPDATA%\Bkdict\diarization`; no painel **Vozes** da transcrição dá para ouvir cada voz, dar nome e juntar duas que são a mesma pessoa.
 
+Com um **endereço iCal** em Ajustes → Calendário (Google: "Endereço secreto no formato iCal"; Outlook: link ICS de "Publicar um calendário"), a reunião ganha o título do evento em andamento e os convidados viram sugestões de nome no painel **Vozes**. No topo da tela Reuniões, e em cada reunião, dá para **perguntar** sobre o que foi dito (a resposta cita `[título · mm:ss]` e abre a transcrição). As tarefas do resumo podem ser marcadas como feitas, copiadas como lista ou enviadas por e-mail.
+
 ## Atalhos padrão
 
 O Windows não enxerga a tecla `Fn` (quem cuida dela é o próprio teclado), então `Ctrl + Win` faz o papel dela:

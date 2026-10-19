@@ -190,11 +190,19 @@ public sealed class AppController
                 dismissed: () => { });
         };
         detector.Start();
+        IcsCalendar.Start();
     }
 
     private void StartMeeting(string? app = null)
     {
-        var meeting = Meeting.New(DateTimeOffset.Now, app);
+        var now = DateTimeOffset.Now;
+        var meeting = Meeting.New(now, app);
+        // The calendar event happening now names the meeting and lists who was invited.
+        if (IcsCalendar.Current(now) is { } calendarEvent)
+        {
+            meeting.Title = $"{calendarEvent.Title} · {now:dd/MM}, {now:HH:mm}";
+            meeting.Attendees = calendarEvent.Attendees;
+        }
         var recording = new MeetingRecorder(meeting.MicPath, meeting.SystemPath);
         try
         {

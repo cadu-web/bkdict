@@ -96,7 +96,7 @@ struct MainView: View {
                 case .dictionary: DictionaryView(model: model)
                 case .snippets: SnippetsView(model: model)
                 case .models: ModelsView(model: model, manager: model.models)
-                case .settings: SettingsView(model: model)
+                case .settings: SettingsView(model: model, meetings: meetings)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

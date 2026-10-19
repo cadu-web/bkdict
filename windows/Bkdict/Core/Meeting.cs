@@ -86,6 +86,12 @@ public sealed class Meeting : ObservableObject
     /// Names of the voices by number; "" means the default "Pessoa N".
     public List<string> Speakers { get; set; } = new();
 
+    /// The invitees of the calendar event happening when the recording started (phase 4).
+    public List<string> Attendees { get; set; } = new();
+
+    /// The text of the summary's tasks marked done.
+    public List<string> DoneTasks { get; set; } = new();
+
     /// While separating: what is happening ("Baixando o separador de vozes 40%"); null for the default label.
     [JsonIgnore]
     public string? SeparatingDetail
@@ -143,6 +149,13 @@ public sealed class Meeting : ObservableObject
                    .AppendLine(segment.Text);
         }
         return builder.ToString().TrimEnd();
+    }
+
+    /// What the summary reads: the invitees first, when the calendar named them, then the transcript.
+    public string TranscriptForAi()
+    {
+        var transcript = TranscriptText();
+        return Attendees.Count > 0 ? $"Convidados: {string.Join(", ", Attendees)}\n{transcript}" : transcript;
     }
 
     public static Meeting New(DateTimeOffset now, string? app = null) => new()

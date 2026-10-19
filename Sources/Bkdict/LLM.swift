@@ -83,7 +83,9 @@ enum LLM {
     /// Tested with the Qwen 2.5 3B: a template to fill, and the rule that "Eles" lines belong to the others, keep
     /// small models from skipping sections or giving the others' tasks to "você".
     private static let meetingInstructions = """
-    Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \
+    Você resume reuniões para a pessoa que gravou. A linha "Convidados", se houver, serve só para \
+    reconhecer nomes ditos na conversa; não use para decidir quem disse cada fala. A transcrição vem com \
+    uma fala por linha: \
     "[mm:ss] Você: …" é a própria pessoa; as outras falas vêm com o nome da pessoa ou "Pessoa N" \
     ("Eles" quando não foi possível separar as vozes). Quem diz "eu faço" numa fala de outra pessoa é \
     essa pessoa, não você.
@@ -145,6 +147,18 @@ enum LLM {
             user: "Em vez da transcrição completa, estas são as anotações de cada parte da reunião, em ordem:\n\n"
                 + notes.joined(separator: "\n\n") + "\n\n\(meetingTemplate)"
         )
+    }
+
+    private static let askInstructions = """
+    Você responde perguntas sobre as reuniões gravadas pela pessoa. Você recebe trechos dessas reuniões: \
+    título, data, resumo e falas no formato [mm:ss] Nome: texto ("Você" é a própria pessoa). Responda em \
+    poucas frases, no idioma da pergunta, só com o que está nos trechos. Quando a informação vier de uma \
+    fala, cite a origem logo depois, no formato [título · mm:ss], copiando o título exatamente como está. \
+    Se a resposta não estiver nos trechos, diga que não encontrou isso nas reuniões.
+    """
+
+    static func askMeetings(_ question: String, context: String) async throws -> String {
+        try await complete(system: askInstructions, user: "Trechos das reuniões:\n\n\(context)\n\nPergunta: \(question)")
     }
 
     /// Applies a spoken instruction to the selected text, or writes new text when nothing is selected.

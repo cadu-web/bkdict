@@ -1,3 +1,4 @@
+import EventKit
 import AVFoundation
 import SwiftUI
 
@@ -5,22 +6,27 @@ import SwiftUI
 struct MeetingsView: View {
     @ObservedObject var meetings: MeetingCenter
     @State private var selected: String?
+    @State private var startTab = MeetingDetail.Tab.summary
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             if let id = selected, let meeting = meetings.meetings.first(where: { $0.id == id }) {
-                MeetingDetail(meetings: meetings, meeting: meeting) { open(nil) }
+                MeetingDetail(meetings: meetings, meeting: meeting, startTab: startTab, open: { open($0, tab: .transcript) }) { open(nil) }
+                    .id(id + startTab.rawValue)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             } else {
-                MeetingList(meetings: meetings, open: open)
+                MeetingList(meetings: meetings, open: { open($0) }, openTranscript: { open($0, tab: .transcript) })
                     .transition(.opacity)
             }
         }
     }
 
-    private func open(_ id: String?) {
-        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.9)) { selected = id }
+    private func open(_ id: String?, tab: MeetingDetail.Tab = .summary) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.9)) {
+            startTab = tab
+            selected = id
+        }
     }
 }
 
@@ -29,6 +35,7 @@ struct MeetingsView: View {
 private struct MeetingList: View {
     @ObservedObject var meetings: MeetingCenter
     let open: (String) -> Void
+    let openTranscript: (String) -> Void
 
     var body: some View {
         Page {
@@ -44,6 +51,9 @@ private struct MeetingList: View {
             if let since = meetings.recordingSince {
                 RecordingBanner(since: since) { meetings.stop() }
                     .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            if meetings.meetings.contains(where: { $0.status == .ready }) {
+                AskBox(meetings: meetings, scope: nil, open: openTranscript)
             }
             if meetings.meetings.isEmpty {
                 EmptyMeetings()
@@ -258,6 +268,9 @@ private struct MeetingDetail: View {
 
     @ObservedObject var meetings: MeetingCenter
     let meeting: Meeting
+    var startTab = Tab.summary
+    /// Opens a meeting (a citation in an answer) on its transcript.
+    var open: (String) -> Void = { _ in }
     let back: () -> Void
     @State private var tab = Tab.summary
     @State private var confirmDelete = false
@@ -273,6 +286,11 @@ private struct MeetingDetail: View {
                 .foregroundStyle(Theme.accent)
 
             header
+                .onAppear { tab = startTab }
+
+            if meeting.status == .ready {
+                AskBox(meetings: meetings, scope: meeting, open: open)
+            }
 
             if let error = meeting.error {
                 Notice(icon: "exclamationmark.triangle", text: error)
@@ -345,7 +363,8 @@ private struct MeetingDetail: View {
         switch meeting.status {
         case .ready, .failed:
             if let text = meeting.summary {
-                SummaryView(summary: MeetingSummary(markdown: text), fallback: text)
+                SummaryView(summary: MeetingSummary(markdown: text), fallback: text, meeting: meeting,
+                            toggle: { task, done in meetings.setTask(meeting.id, task, done: done) })
                     .transition(.opacity.combined(with: .offset(y: 8)))
             }
         default:
@@ -538,6 +557,9 @@ struct MeetingSummary {
     struct Task: Hashable {
         let owner: String?
         let text: String
+
+        /// The task as written in the summary, the key for "done".
+        var line: String { owner.map { "\($0): \(text)" } ?? text }
     }
 
     var overview: [String] = []
@@ -584,6 +606,8 @@ struct MeetingSummary {
 private struct SummaryView: View {
     let summary: MeetingSummary
     let fallback: String
+    let meeting: Meeting
+    let toggle: (String, Bool) -> Void
 
     var body: some View {
         if summary.isEmpty {
@@ -604,18 +628,34 @@ private struct SummaryView: View {
                     .card(padding: 18)
                 }
 
-                SummaryBlock(title: "Tarefas", icon: "checklist", empty: summary.tasks.isEmpty) {
+                SummaryBlock(title: "Tarefas", icon: "checklist", empty: summary.tasks.isEmpty,
+                             trailing: summary.tasks.isEmpty ? nil : AnyView(TaskActions(meeting: meeting, tasks: summary.tasks))) {
                     ForEach(summary.tasks, id: \.self) { task in
+                        let done = (meeting.doneTasks ?? []).contains(task.line)
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .strokeBorder(Theme.secondary.opacity(0.6), lineWidth: 1.2)
-                                .frame(width: 13, height: 13)
-                                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
-                            if let owner = task.owner { OwnerChip(owner: owner) }
+                            Button { toggle(task.line, !done) } label: {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(done ? Theme.accent : Color.clear)
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .strokeBorder(done ? Theme.accent : Theme.secondary.opacity(0.6), lineWidth: 1.2)
+                                    if done {
+                                        Image(systemName: "checkmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Theme.onAccent)
+                                    }
+                                }
+                                .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+                            .help(done ? "Marcar como não feita" : "Marcar como feita")
+                            if let owner = task.owner { OwnerChip(owner: owner).opacity(done ? 0.5 : 1) }
                             Text(inline(task.text))
-                                .foregroundStyle(Theme.text)
+                                .strikethrough(done)
+                                .foregroundStyle(done ? Theme.secondary : Theme.text)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        .animation(.easeOut(duration: 0.15), value: done)
                     }
                 }
 
@@ -641,13 +681,18 @@ private struct SummaryBlock<Content: View>: View {
     let title: String
     let icon: String
     let empty: Bool
+    var trailing: AnyView? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(title.uppercased(), systemImage: icon)
-                .font(Theme.mono(10, .medium)).tracking(0.8)
-                .foregroundStyle(Theme.accent)
+            HStack {
+                Label(title.uppercased(), systemImage: icon)
+                    .font(Theme.mono(10, .medium)).tracking(0.8)
+                    .foregroundStyle(Theme.accent)
+                Spacer()
+                trailing
+            }
             if empty {
                 Text("Nenhuma").foregroundStyle(Theme.secondary)
             } else {
@@ -825,6 +870,19 @@ private struct VoiceRow: View {
                 .frame(maxWidth: 240)
                 .onSubmit { commit() }
                 .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+            if let attendees = meeting.attendees, !attendees.isEmpty {
+                Menu("Convidados") {
+                    ForEach(attendees, id: \.self) { person in
+                        Button(person) {
+                            name = person
+                            rename(person)
+                        }
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Escolher entre os convidados do evento")
+            }
             Text(count == 1 ? "1 fala" : "\(count) falas")
                 .font(Theme.body(12))
                 .foregroundStyle(Theme.secondary)
@@ -950,5 +1008,173 @@ private struct TranscriptSkeleton: View {
                 .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
             }
         }
+    }
+}
+
+// MARK: - Tasks as actions
+
+/// Copy the tasks as a checklist, send them by e-mail, or turn the open ones into Reminders.
+private struct TaskActions: View {
+    let meeting: Meeting
+    let tasks: [MeetingSummary.Task]
+    @State private var note: String?
+
+    private var checklist: String {
+        let done = Set(meeting.doneTasks ?? [])
+        return tasks.map { "- [\(done.contains($0.line) ? "x" : " ")] \($0.line)" }.joined(separator: "\n")
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let note {
+                Text(note).font(Theme.body(12)).foregroundStyle(Theme.secondary).transition(.opacity)
+            }
+            IconButton(help: "Copiar tarefas", systemImage: "doc.on.doc") {
+                copyToClipboard(checklist)
+                flash("Copiadas")
+            }
+            IconButton(help: "Enviar por e-mail", systemImage: "envelope") {
+                var components = URLComponents()
+                components.scheme = "mailto"
+                components.queryItems = [URLQueryItem(name: "subject", value: "Tarefas — \(meeting.title)"),
+                                         URLQueryItem(name: "body", value: checklist)]
+                if let url = components.url { NSWorkspace.shared.open(url) }
+            }
+            IconButton(help: "Criar lembretes", systemImage: "bell") {
+                Task { @MainActor in flash(await Reminders.add(open, from: meeting)) }
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: note)
+    }
+
+    private var open: [String] {
+        let done = Set(meeting.doneTasks ?? [])
+        return tasks.map(\.line).filter { !done.contains($0) }
+    }
+
+    private func flash(_ text: String) {
+        note = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if note == text { note = nil } }
+    }
+}
+
+/// One reminder per open task, in the Reminders app's default list.
+enum Reminders {
+    @MainActor
+    static func add(_ tasks: [String], from meeting: Meeting) async -> String {
+        guard !tasks.isEmpty else { return "Nenhuma tarefa aberta" }
+        let store = EKEventStore()
+        guard (try? await store.requestFullAccessToReminders()) == true,
+              let list = store.defaultCalendarForNewReminders() else {
+            return "Sem acesso aos Lembretes"
+        }
+        var created = 0
+        for task in tasks {
+            let reminder = EKReminder(eventStore: store)
+            reminder.title = task
+            reminder.notes = meeting.title
+            reminder.calendar = list
+            if (try? store.save(reminder, commit: false)) != nil { created += 1 }
+        }
+        try? store.commit()
+        return created == 1 ? "1 lembrete criado" : "\(created) lembretes criados"
+    }
+}
+
+// MARK: - Ask
+
+/// A question about the meetings (or one meeting), answered by the AI from a local search of the transcripts.
+private struct AskBox: View {
+    @ObservedObject var meetings: MeetingCenter
+    let scope: Meeting?
+    let open: (String) -> Void
+    @State private var question = ""
+    @State private var answer: String?
+    @State private var asking = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle.magnifyingglass").foregroundStyle(Theme.accent)
+                TextField(scope == nil ? "Pergunte sobre as suas reuniões" : "Pergunte sobre esta reunião", text: $question)
+                    .textFieldStyle(.plain)
+                    .focused($focused)
+                    .onSubmit(ask)
+                if asking {
+                    ProgressView().controlSize(.small)
+                } else if !question.isEmpty {
+                    Button(action: ask) { Image(systemName: "arrow.up.circle.fill").font(.system(size: 18)) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.accent)
+                        .help("Perguntar")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(focused ? Theme.accent : Theme.border))
+
+            if asking {
+                VStack(alignment: .leading, spacing: 8) {
+                    Shimmer()
+                    Shimmer(width: 360)
+                }
+                .card(padding: 14)
+                .transition(.opacity)
+            } else if let answer {
+                Text(linked(answer))
+                    .font(Theme.body(14))
+                    .lineSpacing(3)
+                    .foregroundStyle(Theme.text)
+                    .tint(Theme.accent)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .card(padding: 14)
+                    .environment(\.openURL, OpenURLAction { url in
+                        guard url.scheme == "bkdict", let id = url.host else { return .systemAction }
+                        open(id)
+                        return .handled
+                    })
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: asking)
+    }
+
+    private func ask() {
+        let text = question.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty, !asking else { return }
+        asking = true
+        let pool = scope.map { [$0] } ?? meetings.meetings
+        Task { @MainActor in
+            let context = MeetingSearch.context(for: text, in: pool)
+            do {
+                answer = try await LLM.askMeetings(text, context: context)
+            } catch {
+                answer = "Não foi possível responder: \(error.localizedDescription). Confira a IA em Modelos."
+            }
+            asking = false
+        }
+    }
+
+    /// Turns each [título · mm:ss] citation into a link that opens that meeting's transcript.
+    private func linked(_ text: String) -> AttributedString {
+        var result = AttributedString()
+        var rest = Substring(text)
+        let pattern = #/\[([^\]\n]+?) · (\d{1,2}:\d{2}(?::\d{2})?)\]/#
+        while let match = rest.firstMatch(of: pattern) {
+            result += AttributedString(String(rest[..<match.range.lowerBound]))
+            var citation = AttributedString("[\(match.1) · \(match.2)]")
+            if let meeting = meetings.meetings.first(where: { $0.title == String(match.1) }) {
+                citation.link = URL(string: "bkdict://\(meeting.id)")
+                citation.underlineStyle = .single
+            }
+            result += citation
+            rest = rest[match.range.upperBound...]
+        }
+        result += AttributedString(String(rest))
+        return result
     }
 }

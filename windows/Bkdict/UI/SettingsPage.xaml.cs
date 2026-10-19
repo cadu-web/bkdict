@@ -35,6 +35,7 @@ public partial class SettingsPage : UserControl
         SoundsBox.IsChecked = model.SoundsEnabled;
         DictationBarBox.IsChecked = model.ShowsDictationBar;
         DetectMeetingsBox.IsChecked = model.DetectMeetings;
+        CalendarBox.Text = model.CalendarIcsUrl;
         PolishBox.IsChecked = model.PolishEnabled;
         StartupBox.IsChecked = model.LaunchAtStartup;
         loading = false;
@@ -76,6 +77,13 @@ public partial class SettingsPage : UserControl
     private void DictationBar_Click(object sender, RoutedEventArgs e) => model.ShowsDictationBar = DictationBarBox.IsChecked == true;
 
     private void DetectMeetings_Click(object sender, RoutedEventArgs e) => model.DetectMeetings = DetectMeetingsBox.IsChecked == true;
+
+    private void Calendar_LostFocus(object sender, RoutedEventArgs e) => model.CalendarIcsUrl = CalendarBox.Text;
+
+    private void Calendar_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter) model.CalendarIcsUrl = CalendarBox.Text;
+    }
 
     private void Sounds_Click(object sender, RoutedEventArgs e) => model.SoundsEnabled = SoundsBox.IsChecked == true;
 

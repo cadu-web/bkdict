@@ -31,9 +31,12 @@ Você escolhe onde cada parte roda:
 - **Snippets:** uma frase-gatilho ("meu email") insere um texto fixo.
 - **Ajuste com IA:** remove "é…", "tipo" e repetições, e corrige a pontuação.
 - **Histórico** de ditados, estatísticas e tema claro, escuro ou do sistema.
-- **Reuniões:** grava o seu microfone e o áudio do computador, transcreve separando **Você** de **Eles** (com o eco do
-  alto-falante removido) e resume em decisões, tarefas e pontos em aberto. Tudo neste computador; detalhes em
-  [`docs/reunioes.md`](docs/reunioes.md). No Mac, o áudio dos outros exige macOS 14.2+ e a permissão "Gravação de
+- **Reuniões:** grava o seu microfone e o áudio do computador, transcreve separando **Você** de cada participante
+  (o separador de vozes local dá `Pessoa 1`, `Pessoa 2`…, e você ouve e dá nome) e resume em decisões, tarefas e
+  pontos em aberto. Percebe quando uma chamada começa (Zoom, Teams, Meet, Webex, FaceTime, Slack, Discord) e oferece
+  gravar; usa o calendário (os do Mac ou um endereço iCal) para o título e os convidados; responde perguntas sobre as
+  reuniões; marca tarefas como feitas e as copia, envia por e-mail ou cria Lembretes. Tudo neste computador; detalhes
+  em [`docs/reunioes.md`](docs/reunioes.md). No Mac, o áudio dos outros exige macOS 14.2+ e a permissão "Gravação de
   Áudio do Sistema".
 
 ## Modelos

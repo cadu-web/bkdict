@@ -34,6 +34,11 @@ public partial class MeetingsPage : UserControl
     /// Meetings whose voices were renamed or merged since the summary was written.
     private readonly HashSet<Meeting> namesChanged = new();
     private WaveOutEvent? player;
+    // The question asked on this page (list or one meeting), kept across re-renders while it is answered.
+    private string? askScope;
+    private string askQuestion = "";
+    private string? askAnswer;
+    private bool askBusy;
 
     private static bool Animate => SystemParameters.ClientAreaAnimation;
 
@@ -94,10 +99,10 @@ public partial class MeetingsPage : UserControl
         });
     }
 
-    private void Open(Meeting? meeting)
+    private void Open(Meeting? meeting, string openTab = "summary")
     {
         selected = meeting;
-        tab = "summary";
+        tab = openTab;
         renderedStatus = null;
         Render();
         if (Root.Children.Count > 0 && meeting != null) SlideIn(Root.Children[0], 24, 0);
@@ -124,6 +129,8 @@ public partial class MeetingsPage : UserControl
                                  14, fg: "BrandSecondary", wrap: true));
         header.Children.Add(titles);
         page.Children.Add(header);
+
+        if (model.Meetings.Any(m => m.Status == Meeting.Ready)) page.Children.Add(AskBox(null));
 
         if (model.IsMeetingRecording)
         {
@@ -359,6 +366,8 @@ public partial class MeetingsPage : UserControl
             return page;
         }
 
+        if (meeting.Status == Meeting.Ready && meeting.Segments.Count > 0) page.Children.Add(AskBox(meeting));
+
         // Tabs on the left, actions on the right.
         var bar = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 14) };
         var actions = Actions(meeting);
@@ -470,7 +479,7 @@ public partial class MeetingsPage : UserControl
         {
             if (string.IsNullOrWhiteSpace(meeting.Summary)) return Text("Sem resumo.", 14, fg: "BrandSecondary");
             var summary = MeetingSummary.Parse(meeting.Summary!);
-            return summary.IsEmpty ? Card(Text(meeting.Summary!, 14, wrap: true)) : SummaryView(summary);
+            return summary.IsEmpty ? Card(Text(meeting.Summary!, 14, wrap: true)) : SummaryView(meeting, summary);
         }
         var stack = new StackPanel();
         stack.Children.Add(ProgressLine(meeting));
@@ -478,7 +487,7 @@ public partial class MeetingsPage : UserControl
         return stack;
     }
 
-    private UIElement SummaryView(MeetingSummary summary)
+    private UIElement SummaryView(Meeting meeting, MeetingSummary summary)
     {
         var stack = new StackPanel();
         if (summary.Overview.Count > 0)
@@ -499,10 +508,23 @@ public partial class MeetingsPage : UserControl
         var tasks = new StackPanel();
         foreach (var task in summary.Tasks)
         {
+            var key = TaskKey(task);
+            bool done = meeting.DoneTasks.Contains(key);
             var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 8) };
-            var box = new Border { Width = 13, Height = 13, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1.2),
-                                   VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 3, 10, 0) };
-            box.BorderBrush = SecondaryAt(0.6);
+            // The box marks the task done or not, saved with the meeting.
+            var box = new Border { Width = 15, Height = 15, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1.2),
+                                   VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 10, 0), Cursor = Cursors.Hand };
+            box.BorderBrush = done ? AccentAt(1) : SecondaryAt(0.6);
+            box.Background = done ? AccentAt(1) : Brushes.Transparent;
+            if (done) box.Child = Glyph("\uE73E", 9, "BrandOnAccent");
+            box.ToolTip = done ? "Marcar como não feita" : "Marcar como feita";
+            AutomationLabel(box, (string)box.ToolTip);
+            box.MouseLeftButtonUp += (_, _) =>
+            {
+                if (!meeting.DoneTasks.Remove(key)) meeting.DoneTasks.Add(key);
+                MeetingStore.Save(meeting);
+                Render();
+            };
             DockPanel.SetDock(box, Dock.Left);
             row.Children.Add(box);
             if (task.Owner is { } owner)
@@ -513,10 +535,13 @@ public partial class MeetingsPage : UserControl
                 DockPanel.SetDock(chip, Dock.Left);
                 row.Children.Add(chip);
             }
-            row.Children.Add(Text(Plain(task.Text), 14, wrap: true));
+            var taskText = Text(Plain(task.Text), 14, fg: done ? "BrandSecondary" : "BrandText", wrap: true);
+            if (done) taskText.TextDecorations = TextDecorations.Strikethrough;
+            row.Children.Add(taskText);
             tasks.Children.Add(row);
         }
-        var tasksBlock = Block("Tarefas", "", summary.Tasks.Count == 0, tasks);
+        var tasksBlock = Block("Tarefas", "", summary.Tasks.Count == 0, tasks,
+                               summary.Tasks.Count == 0 ? null : TaskActions(meeting, summary));
         tasksBlock.Margin = new Thickness(0, 0, 0, 14);
         stack.Children.Add(tasksBlock);
 
@@ -549,16 +574,23 @@ public partial class MeetingsPage : UserControl
         return stack;
     }
 
-    private Border Block(string title, string icon, bool empty, UIElement content)
+    private Border Block(string title, string icon, bool empty, UIElement content, UIElement? actions = null)
     {
         var stack = new StackPanel();
-        var label = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+        var head = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 10) };
+        if (actions != null)
+        {
+            DockPanel.SetDock(actions, Dock.Right);
+            head.Children.Add(actions);
+        }
+        var label = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var glyph = Glyph(icon, 11, "BrandAccent");
         glyph.VerticalAlignment = VerticalAlignment.Center;
         glyph.Margin = new Thickness(0, 0, 6, 0);
         label.Children.Add(glyph);
         label.Children.Add(Text(title.ToUpperInvariant(), 10, FontWeights.Medium, "BrandAccent", "MonoFont"));
-        stack.Children.Add(label);
+        head.Children.Add(label);
+        stack.Children.Add(head);
         stack.Children.Add(empty ? Text("Nenhuma", 14, fg: "BrandSecondary") : content);
         return Card(stack, new Thickness(16));
     }
@@ -570,6 +602,158 @@ public partial class MeetingsPage : UserControl
         var chip = new Border { Padding = new Thickness(7, 2, 7, 2), CornerRadius = new CornerRadius(4), Child = label };
         chip.SetResourceReference(Border.BackgroundProperty, you ? "BrandAccentSurface" : "BrandHover");
         return chip;
+    }
+
+    /// How a task is remembered as done: "Dono: tarefa", or the task alone.
+    private static string TaskKey(MeetingSummary.Task task) => task.Owner is { } owner ? $"{owner}: {task.Text}" : task.Text;
+
+    /// The tasks as a checklist: "- [ ] Dono: tarefa" / "- [x] …".
+    private static string TaskList(Meeting meeting, MeetingSummary summary) => string.Join("\n",
+        summary.Tasks.Select(t => $"- [{(meeting.DoneTasks.Contains(TaskKey(t)) ? "x" : " ")}] {Plain(TaskKey(t))}"));
+
+    /// Copy the checklist, or send it in a new e-mail.
+    private UIElement TaskActions(Meeting meeting, MeetingSummary summary)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(CopyButton("", "Copiar tarefas", () => TaskList(meeting, summary), true));
+        var mail = IconButton("", "Enviar tarefas por e-mail", true, () =>
+        {
+            var subject = Uri.EscapeDataString($"Tarefas — {meeting.Title}");
+            var body = Uri.EscapeDataString(TaskList(meeting, summary));
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"mailto:?subject={subject}&body={body}") { UseShellExecute = true });
+            }
+            catch (Exception e)
+            {
+                Log.Write("mailto: " + e.Message);
+            }
+        });
+        mail.Margin = new Thickness(6, 0, 0, 0);
+        row.Children.Add(mail);
+        return row;
+    }
+
+    // MARK: - Ask
+
+    /// "Pergunte sobre as suas reuniões" (list) or "… sobre esta reunião" (one meeting), and the answer below.
+    private UIElement AskBox(Meeting? only)
+    {
+        var scope = only?.Id ?? "*";
+        if (askScope != scope)
+        {
+            askScope = scope;
+            askQuestion = "";
+            askAnswer = null;
+            askBusy = false;
+        }
+        var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 18) };
+
+        var placeholder = only == null ? "Pergunte sobre as suas reuniões" : "Pergunte sobre esta reunião";
+        var input = new TextBox
+        {
+            Text = askQuestion, FontSize = 14, Padding = new Thickness(12, 9, 12, 9), VerticalContentAlignment = VerticalAlignment.Center,
+            IsEnabled = !askBusy,
+        };
+        input.SetResourceReference(Control.FontFamilyProperty, "BodyFont");
+        AutomationLabel(input, placeholder);
+        var hint = Text(placeholder + "  ·  Enter envia", 14, fg: "BrandSecondary");
+        hint.Margin = new Thickness(14, 0, 0, 0);
+        hint.VerticalAlignment = VerticalAlignment.Center;
+        hint.IsHitTestVisible = false;
+        hint.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        input.TextChanged += (_, _) =>
+        {
+            askQuestion = input.Text;
+            hint.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        };
+        input.KeyDown += async (_, e) =>
+        {
+            if (e.Key != Key.Enter || askBusy || input.Text.Trim().Length == 0) return;
+            e.Handled = true;
+            await AskAsync(input.Text.Trim(), only, scope);
+        };
+        var field = new Grid();
+        field.Children.Add(input);
+        field.Children.Add(hint);
+        stack.Children.Add(field);
+
+        if (askBusy)
+        {
+            var waiting = new StackPanel();
+            waiting.Children.Add(Skeleton(null, 12, new Thickness(0, 0, 0, 10)));
+            waiting.Children.Add(Skeleton(null, 12, new Thickness(0, 0, 0, 10)));
+            waiting.Children.Add(Skeleton(260, 12));
+            var card = Card(waiting, new Thickness(16));
+            card.Margin = new Thickness(0, 10, 0, 0);
+            stack.Children.Add(card);
+        }
+        else if (askAnswer is { } answer)
+        {
+            var text = new TextBlock { FontSize = 14, TextWrapping = TextWrapping.Wrap, LineHeight = 22 };
+            text.SetResourceReference(TextBlock.FontFamilyProperty, "BodyFont");
+            text.SetResourceReference(TextBlock.ForegroundProperty, "BrandText");
+            AddAnswer(text, answer);
+            var card = Card(text, new Thickness(16));
+            card.Margin = new Thickness(0, 10, 0, 0);
+            stack.Children.Add(card);
+            SlideIn(card, 0, 8);
+        }
+        return stack;
+    }
+
+    private async System.Threading.Tasks.Task AskAsync(string question, Meeting? only, string scope)
+    {
+        askQuestion = question;
+        askBusy = true;
+        askAnswer = null;
+        Render();
+        string answer;
+        try
+        {
+            var meetings = model.Meetings.ToList();
+            var context = await System.Threading.Tasks.Task.Run(() => MeetingSearch.Context(question, meetings, only));
+            answer = context.Length == 0 ? "Ainda não há reuniões prontas para consultar." : await Llm.AskMeetingsAsync(question, context);
+        }
+        catch (Exception e)
+        {
+            answer = e is UserFacingException ? e.Message : "A IA não respondeu. Confira a IA em Modelos e tente de novo.";
+            Log.Write("ask: " + e.Message);
+        }
+        if (askScope != scope) return;
+        askBusy = false;
+        askAnswer = answer.Trim();
+        Render();
+    }
+
+    /// The answer with each "[título · mm:ss]" as a link that opens that meeting on its transcript.
+    private void AddAnswer(TextBlock text, string answer)
+    {
+        int last = 0;
+        foreach (System.Text.RegularExpressions.Match match in
+                 System.Text.RegularExpressions.Regex.Matches(answer, @"\[([^\[\]]+?)\s·\s(\d{1,2}(?::\d{2}){1,2})\]"))
+        {
+            text.Inlines.Add(new System.Windows.Documents.Run(answer[last..match.Index]));
+            var title = match.Groups[1].Value.Trim();
+            var target = model.Meetings.FirstOrDefault(m => m.Title.Equals(title, StringComparison.OrdinalIgnoreCase))
+                      ?? model.Meetings.FirstOrDefault(m => m.Title.StartsWith(title, StringComparison.OrdinalIgnoreCase)
+                                                         || title.StartsWith(m.Title, StringComparison.OrdinalIgnoreCase));
+            if (target == null)
+            {
+                text.Inlines.Add(new System.Windows.Documents.Run(match.Value));
+            }
+            else
+            {
+                var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(match.Value)) { TextDecorations = null };
+                link.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "BrandAccent");
+                link.Cursor = Cursors.Hand;
+                link.ToolTip = "Abrir a transcrição";
+                link.Click += (_, _) => Open(target, "transcript");
+                text.Inlines.Add(link);
+            }
+            last = match.Index + match.Length;
+        }
+        text.Inlines.Add(new System.Windows.Documents.Run(answer[last..]));
     }
 
     /// Bold and italic markers out: the blocks are plain text.
@@ -700,6 +884,29 @@ public partial class MeetingsPage : UserControl
                 merge.MouseLeftButtonUp += (_, _) => { menu.PlacementTarget = merge; menu.IsOpen = true; };
                 DockPanel.SetDock(merge, Dock.Right);
                 row.Children.Add(merge);
+            }
+
+            if (meeting.Attendees.Count > 0)
+            {
+                // The calendar's invitees, to name the voice in one click.
+                var invitees = SecondaryButton("Convidados ▾", () => { });
+                invitees.Margin = new Thickness(8, 0, 0, 0);
+                var people = new ContextMenu();
+                foreach (var person in meeting.Attendees)
+                {
+                    var item = new MenuItem { Header = person };
+                    item.Click += (_, _) =>
+                    {
+                        if (index >= meeting.Speakers.Count) return;
+                        meeting.Speakers[index] = person;
+                        VoicesChanged(meeting);
+                    };
+                    people.Items.Add(item);
+                }
+                invitees.ContextMenu = people;
+                invitees.MouseLeftButtonUp += (_, _) => { people.PlacementTarget = invitees; people.IsOpen = true; };
+                DockPanel.SetDock(invitees, Dock.Right);
+                row.Children.Add(invitees);
             }
 
             var name = new TextBox

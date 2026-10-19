@@ -27,6 +27,8 @@ private struct MicrophoneRow: View {
 
 struct SettingsView: View {
     @ObservedObject var model: AppModel
+    let meetings: MeetingCenter
+    @State private var calendarDenied = false
 
     var body: some View {
         Page {
@@ -40,6 +42,30 @@ struct SettingsView: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(width: 240)
+                }
+            }
+
+            SectionCard(title: "Calendário",
+                        footer: "O evento que está acontecendo dá o título da reunião gravada e a lista de convidados, que ajuda a dar nome às vozes. Endereço iCal: no Google Agenda, Configurações da agenda → Endereço secreto no formato iCal; no Outlook, Calendário → Publicar calendário → link ICS.") {
+                SettingRow(title: "Usar os calendários do Mac",
+                           detail: calendarDenied ? "Sem permissão: libere o Bkdict em Ajustes do Sistema → Privacidade e Segurança → Calendários"
+                                                  : "Google, Outlook e iCloud adicionados em Ajustes do Sistema → Contas de Internet") {
+                    Toggle("", isOn: Binding(get: { model.useSystemCalendars }, set: { on in
+                        guard on else { model.useSystemCalendars = false; return }
+                        Task { @MainActor in
+                            let granted = await meetings.calendar.requestAccess()
+                            model.useSystemCalendars = granted
+                            calendarDenied = !granted
+                        }
+                    }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                SettingRow(title: "Endereço iCal", divider: false) {
+                    TextField("https://…/basic.ics", text: $model.calendarICS)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 280)
+                        .onSubmit { Task { await meetings.calendar.reloadICS() } }
                 }
             }
 
