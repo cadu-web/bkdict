@@ -21,8 +21,8 @@ final class OverlayState: ObservableObject {
         case hidden, listening, handsFree, command, transcribing, polishing, thinking
         case transforming(String)
         case error(String)
-        /// Guidance rather than a failure, e.g. where a dictation went when it could not be pasted.
-        case tip(String)
+        /// A dictation with nowhere to paste it: shown with a button to copy it.
+        case unplaced(String)
     }
 
     @Published var phase: Phase = .hidden
@@ -30,6 +30,8 @@ final class OverlayState: ObservableObject {
     @Published var hovering = false
     /// The dictation shortcut, shown when the idle bar is hovered.
     @Published var dictateKeys: [String] = []
+    /// The shortcut that pastes the last dictation, for the "nowhere to paste" card.
+    @Published var pasteKeys: [String] = []
     /// The microphone setting, for the bar's menu (a device UID or Microphones.automatic).
     @Published var microphone = Settings.microphone
     @Published var edge = Settings.dictationBarEdge
@@ -53,6 +55,8 @@ final class OverlayState: ObservableObject {
     var onStop: () -> Void = {}
     var onCancel: () -> Void = {}
     var onPasteLast: () -> Void = {}
+    var onCopyUnplaced: () -> Void = {}
+    var onDismissUnplaced: () -> Void = {}
     var onOpenApp: () -> Void = {}
     var onHideForAnHour: () -> Void = {}
     var onSelectMicrophone: (String) -> Void = { _ in }
@@ -89,7 +93,7 @@ final class OverlayWindow {
         static let hovered = NSSize(width: 204, height: 36)
         static let recording = NSSize(width: 300, height: 40)
         static let busy = NSSize(width: 260, height: 40)
-        static let tip = NSSize(width: 380, height: 40)
+        static let unplaced = NSSize(width: 380, height: 124)
         // On a side the whole bar stands up.
         static let hoveredSide = NSSize(width: 52, height: 148)
         static let recordingSide = NSSize(width: 40, height: 104)
@@ -239,8 +243,9 @@ final class OverlayWindow {
             return side ? Size.idleSide : Size.idle
         case .listening, .handsFree, .command:
             return side ? Size.recordingSide : Size.recording
-        case .tip:
-            return side ? Size.busySide : Size.tip
+        // Like the offer, it keeps its text on a side: a card lying against that edge.
+        case .unplaced:
+            return Size.unplaced
         default:
             return side ? Size.busySide : Size.busy
         }
@@ -385,6 +390,8 @@ private struct BarView: View {
             }
         case .listening, .handsFree, .command:
             side ? AnyView(recordingSide) : AnyView(recording)
+        case .unplaced(let text):
+            AnyView(UnplacedView(text: text, pasteKeys: state.pasteKeys, copy: state.onCopyUnplaced, dismiss: state.onDismissUnplaced))
         default:
             side ? AnyView(busySide) : AnyView(busy)
         }
@@ -461,8 +468,6 @@ private struct BarView: View {
         switch state.phase {
         case .error:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.accentOnTinta)
-        case .tip:
-            Image(systemName: "text.cursor").foregroundStyle(Theme.onAccent)
         default:
             ProgressView().controlSize(.small).tint(Theme.onAccent)
         }
@@ -489,7 +494,8 @@ private struct BarView: View {
         case .transcribing: return "Transcrevendo…"
         case .polishing: return "Ajustando texto…"
         case .transforming(let name): return "\(name)…"
-        case .error(let message), .tip(let message): return message
+        case .error(let message): return message
+        case .unplaced: return ""
         case .hidden: return ""
         }
     }
@@ -709,6 +715,62 @@ private struct OfferView: View {
     private var subtitle: String {
         guard offer.isStop, let since else { return "\(offer.app) · agora" }
         return "\(offer.app) · \(Meeting.clock(Date().timeIntervalSince(since))) gravados"
+    }
+}
+
+/// A dictation that found no text box: what was said, to copy, or paste later with the shortcut.
+private struct UnplacedView: View {
+    let text: String
+    let pasteKeys: [String]
+    let copy: () -> Void
+    let dismiss: () -> Void
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "text.cursor").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.accentOnTinta)
+                Text("Nenhum campo de texto para colar").font(Theme.body(13, .medium)).foregroundStyle(Theme.onAccent)
+                Spacer(minLength: 0)
+                Button(action: dismiss) {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.onAccent.opacity(0.6))
+                        .frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Fechar")
+            }
+            Text(text)
+                .font(Theme.body(12))
+                .foregroundStyle(Theme.onAccent.opacity(0.85))
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(text)
+            HStack(spacing: 6) {
+                if !pasteKeys.isEmpty {
+                    Text("Ou cole depois com").font(Theme.body(11)).foregroundStyle(Theme.onAccent.opacity(0.5))
+                    KeyCaps(keys: pasteKeys, onAccent: true)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    copy()
+                    withAnimation(.easeOut(duration: 0.15)) { copied = true }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 11, weight: .semibold))
+                        Text(copied ? "Copiado" : "Copiar").font(Theme.body(13, .semibold))
+                    }
+                    .foregroundStyle(Color(hex: 0x0A0A0A))
+                    .padding(.horizontal, 12)
+                    .frame(height: 28)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.onAccent))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
 }
 
