@@ -18,7 +18,7 @@ struct MeetingsView: View {
                     .id(id + startTab.rawValue)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             } else {
-                MeetingHome(meetings: meetings, model: model, calendar: meetings.calendar, openSettings: openSettings,
+                MeetingHome(meetings: meetings, model: model, openSettings: openSettings,
                             open: { open($0) }, openTranscript: { open($0, tab: .transcript) })
                     .transition(.opacity)
             }
@@ -35,12 +35,11 @@ struct MeetingsView: View {
 
 // MARK: - Home
 
-/// The meetings home (docs/reunioes.md, screen v3): header, the auto-record banner, today's calendar, past
+/// The meetings home (docs/reunioes.md, screen v3): header, the auto-record banner, past
 /// meetings by day, a question bar at the bottom and a preview of the selected meeting on the right.
 private struct MeetingHome: View {
     @ObservedObject var meetings: MeetingCenter
     @ObservedObject var model: AppModel
-    @ObservedObject var calendar: MeetingCalendar
     let openSettings: () -> Void
     let open: (String) -> Void
     let openTranscript: (String) -> Void
@@ -66,8 +65,6 @@ private struct MeetingHome: View {
                                 RecordingBanner(since: since) { meetings.stop() }
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                             }
-                            TodayCard(meetings: meetings, calendar: calendar,
-                                      connect: { Task { await calendar.google.connect() } })
                             past
                         }
                         .padding(.horizontal, 36)
@@ -238,99 +235,6 @@ private struct MeetingHome: View {
     }()
 }
 
-/// Today's calendar events, with Gravar on the one going on now.
-private struct TodayCard: View {
-    @ObservedObject var meetings: MeetingCenter
-    @ObservedObject var calendar: MeetingCalendar
-    let connect: () -> Void
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            VStack(alignment: .leading, spacing: 14) {
-                Text("HOJE")
-                    .font(Theme.mono(10, .medium)).tracking(0.8)
-                    .foregroundStyle(Theme.secondary)
-                if !calendar.isConfigured {
-                    VStack(spacing: 12) {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 26, weight: .light))
-                            .foregroundStyle(Theme.secondary)
-                        Text("Nenhuma reunião encontrada")
-                            .font(Theme.display(18))
-                            .foregroundStyle(Theme.secondary)
-                        if calendar.google.connecting {
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
-                                Text("Continue no navegador…").foregroundStyle(Theme.secondary)
-                            }
-                        } else {
-                            Button(action: connect) { Label("Conectar Google Agenda", systemImage: "calendar.badge.plus") }
-                                .buttonStyle(PrimaryButtonStyle())
-                        }
-                        if let error = calendar.google.error {
-                            Text(error).font(Theme.body(12)).foregroundStyle(Theme.accent).multilineTextAlignment(.center)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                } else {
-                    let events = calendar.todayEvents(at: context.date)
-                    if events.isEmpty {
-                        Text("Nenhuma reunião hoje no calendário.")
-                            .foregroundStyle(Theme.secondary)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(Array(events.enumerated()), id: \.offset) { index, event in
-                                eventRow(event, now: context.date)
-                                if index < events.count - 1 { Divider().overlay(Theme.border) }
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.sidebar))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
-        }
-    }
-
-    private func eventRow(_ event: CalendarEvent, now: Date) -> some View {
-        let happening = event.start <= now.addingTimeInterval(10 * 60) && event.end > now
-        return HStack(spacing: 14) {
-            Text(Self.time.string(from: event.start))
-                .font(Theme.mono(12, .medium))
-                .foregroundStyle(happening ? Theme.accent : Theme.secondary)
-                .frame(width: 44, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(event.title).font(Theme.body(14, .medium)).foregroundStyle(Theme.text).lineLimit(1)
-                if !event.attendees.isEmpty {
-                    Text(event.attendees.count == 1 ? "1 convidado" : "\(event.attendees.count) convidados")
-                        .font(Theme.body(12))
-                        .foregroundStyle(Theme.secondary)
-                }
-            }
-            Spacer()
-            if happening, let link = event.link, let url = URL(string: link) {
-                Button { NSWorkspace.shared.open(url) } label: { Label("Entrar", systemImage: "video") }
-                    .buttonStyle(SecondaryButtonStyle())
-            }
-            if happening {
-                if meetings.recordingSince != nil {
-                    Text("Gravando").font(Theme.mono(10, .medium)).tracking(0.8).textCase(.uppercase).foregroundStyle(Theme.accent)
-                } else {
-                    Button { meetings.start() } label: { Label("Gravar", systemImage: "record.circle") }
-                        .buttonStyle(SecondaryButtonStyle())
-                }
-            }
-        }
-        .padding(.vertical, 10)
-        .opacity(event.end < now ? 0.5 : 1)
-    }
-
-    private static let time: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
-}
-
 private struct PastRow: View {
     let meeting: Meeting
     let selected: Bool
@@ -419,8 +323,6 @@ private struct PreviewPane: View {
                                 ForEach(0..<voices.count, id: \.self) { voice in
                                     chip(meeting.name(of: voice), color: VoiceColors.color(voice))
                                 }
-                            } else if let attendees = meeting.attendees, !attendees.isEmpty {
-                                ForEach(attendees, id: \.self) { chip($0, color: Theme.secondary) }
                             } else if meeting.systemAudio {
                                 chip("Participantes", color: Theme.secondary)
                             }
@@ -1183,19 +1085,6 @@ private struct VoiceRow: View {
                 .frame(maxWidth: 240)
                 .onSubmit { commit() }
                 .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
-            if let attendees = meeting.attendees, !attendees.isEmpty {
-                Menu("Convidados") {
-                    ForEach(attendees, id: \.self) { person in
-                        Button(person) {
-                            name = person
-                            rename(person)
-                        }
-                    }
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("Escolher entre os convidados do evento")
-            }
             Text(count == 1 ? "1 fala" : "\(count) falas")
                 .font(Theme.body(12))
                 .foregroundStyle(Theme.secondary)

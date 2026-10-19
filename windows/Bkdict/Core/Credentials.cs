@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Bkdict.Core;
 
-/// API keys and the Google Calendar authorization live in the Windows Credential Manager (the Keychain
+/// API keys live in the Windows Credential Manager (the Keychain
 /// counterpart), never in settings.json.
 public static class Credentials
 {
@@ -15,7 +15,7 @@ public static class Credentials
 
     public static void Set(LlmProvider provider, string? value) => Set(provider.ToString().ToLowerInvariant(), value);
 
-    /// A secret by name, stored as "Bkdict/<name>" (e.g. "google-calendar").
+    /// A secret by name, stored as "Bkdict/<name>".
     public static string? Get(string name)
     {
         if (!CredRead(Target(name), CredTypeGeneric, 0, out var pointer)) return null;

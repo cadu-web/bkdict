@@ -83,9 +83,7 @@ enum LLM {
     /// Tested with the Qwen 2.5 3B: a template to fill, and the rule that "Eles" lines belong to the others, keep
     /// small models from skipping sections or giving the others' tasks to "você".
     private static let meetingInstructions = """
-    Você resume reuniões para a pessoa que gravou. A linha "Convidados", se houver, serve só para \
-    reconhecer nomes ditos na conversa; não use para decidir quem disse cada fala. A transcrição vem com \
-    uma fala por linha: \
+    Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \
     "[mm:ss] Você: …" é a própria pessoa; as outras falas vêm com o nome da pessoa ou "Pessoa N" \
     ("Eles" quando não foi possível separar as vozes). Quem diz "eu faço" numa fala de outra pessoa é \
     essa pessoa, não você.

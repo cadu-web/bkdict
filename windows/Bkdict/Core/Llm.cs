@@ -92,7 +92,7 @@ public static class Llm
     // rule that "Eles" lines belong to the others, keep small models from skipping sections or giving the others'
     // tasks to "você".
     private const string MeetingInstructions =
-        "Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \"[mm:ss] Quem: …\". \"Você\" é a pessoa que gravou; as outras falas vêm com o nome da pessoa ou \"Pessoa N\" (\"Eles\" quando não foi possível separar as vozes). Quem diz \"eu faço\" numa fala de outra pessoa é essa pessoa, não você. A linha Convidados, se houver, serve só para reconhecer nomes ditos na conversa; não use para decidir quem disse cada fala.\n\n" +
+        "Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \"[mm:ss] Quem: …\". \"Você\" é a pessoa que gravou; as outras falas vêm com o nome da pessoa ou \"Pessoa N\" (\"Eles\" quando não foi possível separar as vozes). Quem diz \"eu faço\" numa fala de outra pessoa é essa pessoa, não você.\n\n" +
         "Escreva em segunda pessoa: \"você\" para quem gravou, e os outros pelo nome (ou \"os participantes\"). Nas Tarefas, comece cada linha com o dono: \"Você:\", o nome da pessoa, ou \"Participantes:\" quando não der para saber.\n\n" +
         "Responda preenchendo exatamente o modelo que vem depois da transcrição: as quatro seções, nessa ordem, sem nada antes ou depois. Use só o que foi dito; não invente nomes, datas, números nem decisões. Seção sem conteúdo leva \"- Nenhuma.\".";
 

@@ -48,9 +48,6 @@ public sealed class AppSettings
     /// The "Gravar sozinho?" banner was answered (either way) and stays hidden.
     public bool AutoRecordAsked { get; set; }
 
-    /// The Google account whose calendar is connected (docs/reunioes.md, "Calendário — Google Agenda"); the
-    /// authorization itself is in the Credential Manager.
-    public string? GoogleEmail { get; set; }
 
     /// Where the dictation bar docks: "bottom", "left" or "right" (see OverlayWindow.Edges).
     public string DictationBarEdge { get; set; } = "bottom";

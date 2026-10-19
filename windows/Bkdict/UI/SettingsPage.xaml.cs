@@ -22,16 +22,8 @@ public partial class SettingsPage : UserControl
         InitializeComponent();
         DataPath.Text = Paths.Support;
         model.ShortcutsChanged += BuildShortcuts;
-        Loaded += (_, _) =>
-        {
-            Load();
-            GoogleCalendar.Changed += GoogleChanged;
-        };
-        Unloaded += (_, _) =>
-        {
-            StopRecording();
-            GoogleCalendar.Changed -= GoogleChanged;
-        };
+        Loaded += (_, _) => Load();
+        Unloaded += (_, _) => StopRecording();
     }
 
     private void Load()
@@ -47,7 +39,6 @@ public partial class SettingsPage : UserControl
         PolishBox.IsChecked = model.PolishEnabled;
         StartupBox.IsChecked = model.LaunchAtStartup;
         loading = false;
-        UpdateGoogle();
         BuildShortcuts();
     }
 
@@ -92,30 +83,6 @@ public partial class SettingsPage : UserControl
         model.AutoRecordMeetings = AutoRecordBox.IsChecked == true;
         model.AutoRecordAsked = true;
     }
-
-    // GoogleCalendar raises Changed from background threads.
-    private void GoogleChanged() => Dispatcher.InvokeAsync(UpdateGoogle);
-
-    /// Google Agenda row: connect, or the connected account with Desconectar; errors show under the label.
-    private void UpdateGoogle()
-    {
-        bool connected = GoogleCalendar.IsConfigured;
-        GoogleConnectButton.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
-        GoogleDisconnectButton.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
-        GoogleConnectButton.IsEnabled = !GoogleCalendar.IsConnecting;
-        GoogleConnectButton.Content = GoogleCalendar.IsConnecting ? "Conectando…" : "Conectar com o Google";
-        GoogleStatus.Text = connected
-            ? $"Conectado como {GoogleCalendar.Email ?? "sua conta Google"}"
-            : GoogleCalendar.IsConnecting
-                ? "Termine o login no navegador que abriu."
-                : "Dá o título às reuniões gravadas e sugere os nomes dos convidados";
-        GoogleError.Text = GoogleCalendar.LastError ?? "";
-        GoogleError.Visibility = string.IsNullOrEmpty(GoogleCalendar.LastError) ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private async void GoogleConnect_Click(object sender, RoutedEventArgs e) => await GoogleCalendar.ConnectAsync();
-
-    private async void GoogleDisconnect_Click(object sender, RoutedEventArgs e) => await GoogleCalendar.DisconnectAsync();
 
     private void Sounds_Click(object sender, RoutedEventArgs e) => model.SoundsEnabled = SoundsBox.IsChecked == true;
 

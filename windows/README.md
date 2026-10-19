@@ -63,7 +63,7 @@ Com **Detectar reuniões** ligado (Ajustes), quando Zoom, Teams, Webex, Slack, D
 
 Os outros participantes são separados por voz (`Pessoa 1`, `Pessoa 2`…) pelo [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), baixado na primeira reunião para `%LOCALAPPDATA%\Bkdict\diarization`; no painel **Vozes** da transcrição dá para ouvir cada voz, dar nome e juntar duas que são a mesma pessoa.
 
-Com o **Google Agenda** conectado em Ajustes → Calendário (**Conectar com o Google**: login no navegador, sem servidor no meio; o acesso fica no Gerenciador de Credenciais), a reunião ganha o título do evento em andamento, os convidados viram sugestões de nome no painel **Vozes** e o evento que está acontecendo mostra **Entrar** (link da chamada) ao lado de **Gravar**. A credencial OAuth do app vem de `Resources/google-oauth.json`. No topo da tela Reuniões, e em cada reunião, dá para **perguntar** sobre o que foi dito (a resposta cita `[título · mm:ss]` e abre a transcrição). As tarefas do resumo podem ser marcadas como feitas, copiadas como lista ou enviadas por e-mail.
+Na tela Reuniões, e em cada reunião, dá para **perguntar** sobre o que foi dito (a resposta cita `[título · mm:ss]` e abre a transcrição). As tarefas do resumo podem ser marcadas como feitas, copiadas como lista ou enviadas por e-mail.
 
 ## Atalhos padrão
 

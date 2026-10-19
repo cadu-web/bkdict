@@ -1,5 +1,6 @@
 import AppKit
 import CoreAudio
+import os
 
 /// Notices a call: a meeting app using the microphone (see docs/reunioes.md, phase 2). Checked every 3 s; the call
 /// ends after 8 s with the app off the microphone.
@@ -39,6 +40,9 @@ final class MeetingDetector {
 
     /// The call in progress, by the name shown to the person.
     private(set) var call: String?
+    /// What was last logged, so the log shows changes only (`log stream --predicate 'subsystem == "co.bkdg.bkdict"'`).
+    private var lastReport = ""
+    private static let log = Logger(subsystem: "co.bkdg.bkdict", category: "meetings")
     private var lastSeen: Date?
     private var timer: Timer?
 
@@ -54,7 +58,15 @@ final class MeetingDetector {
             return
         }
         let now = Date()
-        if let found = Self.currentCall() {
+        let found = Self.currentCall()
+        if #available(macOS 14.2, *) {
+            let report = "microfone: \(Self.microphoneUsers().filter { !$0.isEmpty }.sorted()) → chamada: \(found ?? "nenhuma")"
+            if report != lastReport {
+                lastReport = report
+                Self.log.notice("\(report, privacy: .public)")
+            }
+        }
+        if let found {
             lastSeen = now
             if call != found {
                 call = found

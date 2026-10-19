@@ -44,11 +44,6 @@ struct SettingsView: View {
                 }
             }
 
-            SectionCard(title: "Calendário",
-                        footer: "O evento que está acontecendo dá o título da reunião gravada e a lista de convidados, que ajuda a dar nome às vozes. O Bkdict só lê a agenda; o acesso fica guardado no Keychain deste Mac.") {
-                GoogleCalendarRow(google: meetings.calendar.google)
-            }
-
             SectionCard(title: "Ditado") {
                 MicrophoneRow(model: model)
                 SettingRow(title: "Detectar reuniões", detail: "Oferece gravar quando uma chamada começa no Zoom, Teams, Meet e outros") {
@@ -119,31 +114,5 @@ private extension SettingsView {
             text += " Com Fn, deixe \u{201C}Ao pressionar 🌐\u{201D} como \u{201C}Não fazer nada\u{201D} em Ajustes do Sistema → Teclado."
         }
         return text
-    }
-}
-
-/// Google Calendar: connect with the browser login, or the connected account with Desconectar.
-private struct GoogleCalendarRow: View {
-    @ObservedObject var google: GoogleCalendar
-
-    var body: some View {
-        SettingRow(title: "Google Agenda",
-                   detail: google.error ?? (google.email.map { "Conectado como \($0)" } ?? "Leia os eventos da sua agenda do Google"),
-                   divider: false) {
-            if google.isConnected {
-                Button("Desconectar") { google.disconnect() }
-                    .buttonStyle(SecondaryButtonStyle())
-            } else if google.connecting {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Continue no navegador…").font(Theme.body(12)).foregroundStyle(Theme.secondary)
-                }
-            } else {
-                Button { Task { await google.connect() } } label: {
-                    Label("Conectar com o Google", systemImage: "calendar.badge.plus")
-                }
-                .buttonStyle(PrimaryButtonStyle())
-            }
-        }
     }
 }

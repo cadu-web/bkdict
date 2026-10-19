@@ -65,12 +65,6 @@ enum Settings {
         set { defaults.set(newValue, forKey: "showsDictationBar") }
     }
 
-    /// The Google account whose calendar is connected; the token itself is in the Keychain.
-    static var googleEmail: String? {
-        get { defaults.string(forKey: "googleEmail") }
-        set { defaults.set(newValue, forKey: "googleEmail") }
-    }
-
     /// Record a detected call straight away and stop when it ends, instead of offering (meetings screen v3).
     static var autoRecordMeetings: Bool {
         get { defaults.bool(forKey: "autoRecordMeetings") }

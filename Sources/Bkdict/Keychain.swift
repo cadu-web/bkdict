@@ -13,15 +13,6 @@ enum Keychain {
         write(value, account: provider.rawValue.lowercased())
     }
 
-    /// Other secrets, such as the Google Calendar refresh token.
-    static func secret(_ account: String) -> String? {
-        read(account: account)
-    }
-
-    static func setSecret(_ value: String?, for account: String) {
-        write(value, account: account)
-    }
-
     private static func read(account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

@@ -29,8 +29,6 @@
     <Resource Include="..\..\Resources\AppIcon-windows-1024.png" Link="Assets\AppIcon.png" />
     <!-- BKDG fonts, shared with the macOS app; referenced as pack://application:,,,/Fonts/#Family. -->
     <Resource Include="..\..\Resources\Fonts\*.ttf" Link="Fonts\%(Filename)%(Extension)" />
-    <!-- The Google OAuth client (docs/reunioes.md, "Calendário — Google Agenda"), read by Core/GoogleCalendar.cs. -->
-    <EmbeddedResource Include="..\..\Resources\google-oauth.json" LogicalName="google-oauth.json" />
   </ItemGroup>
 
 </Project>

@@ -202,36 +202,11 @@ Fica para quando houver como testar; os convidados do calendário (fase 4) vão 
 
 # Fase 4 — calendário, perguntas e tarefas
 
-## Calendário — Google Agenda
+## Calendário
 
-Conexão direta com a conta Google, como "Fazer login com o Google", sem servidor: o padrão OAuth para apps de
-desktop (código de autorização com PKCE e redirecionamento para `http://127.0.0.1:<porta livre>`).
-
-- **Credencial**: `Resources/google-oauth.json` (`{"clientId": "…", "clientSecret": "…"}`), um cliente OAuth do
-  tipo **App para computador** do Google Cloud da BKDG, com a Google Calendar API ativada. Para apps de desktop o
-  Google não trata o "secret" como segredo; o arquivo vai junto do app (Mac: `Contents/Resources`; Windows: recurso
-  embutido). Vazio: o botão avisa que a credencial não foi configurada.
-- **Conectar** (Ajustes → Calendário e o "Conectar calendário" da tela de Reuniões): abre no navegador
-  `https://accounts.google.com/o/oauth2/v2/auth` com `scope=openid email https://www.googleapis.com/auth/calendar.readonly`,
-  `access_type=offline`, `prompt=consent`, `code_challenge` S256 e `state`; um servidor local de uma requisição
-  recebe o código, responde com uma página "Pronto, pode voltar ao Bkdict" e troca o código em
-  `https://oauth2.googleapis.com/token` (com `code_verifier`). Tempo máximo: 3 min.
-- **Guarda**: o refresh token no Keychain (Mac) / Gerenciador de Credenciais (Windows); o e-mail (do `id_token`) nos
-  ajustes. Access token só em memória, renovado quando vence.
-- **Eventos**: `GET https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin&timeMax&singleEvents=true&orderBy=startTime`
-  de ontem a amanhã, a cada 5 min e ao conectar; ignora cancelados e eventos de dia inteiro. De cada evento: título,
-  início, fim, convidados (`displayName` ou o e-mail antes do `@`; sem `self` e sem salas — `resource`) e o link da
-  chamada (`hangoutLink` ou o `entryPoints` de vídeo do `conferenceData`).
-- **Desconectar**: revoga em `https://oauth2.googleapis.com/revoke` e apaga o token e o e-mail.
-- Ajustes, seção **Calendário**: linha "Google Agenda" com o botão **Conectar com o Google**; conectado,
-  "Conectado como fulano@empresa.com" e **Desconectar**; erros aparecem na própria linha.
-- Saem os calendários do sistema (EventKit) e o endereço iCal.
-- **Hoje** (tela de Reuniões) mostra os eventos do Google; no que está acontecendo, além de **Gravar**, o botão
-  **Entrar** abre o link da chamada.
-- **Ao começar a gravar**: o evento que está acontecendo agora (começa até 10 min depois ou já começou e não
-  acabou; o de início mais próximo) dá o **título** e os **convidados**, como antes.
-- Convidados ajudam a dar nome: no painel Vozes, "Convidados ▾" com os nomes; na transcrição enviada à IA, a linha
-  `Convidados: Ana, Bruno` (só para reconhecer nomes ditos).
+Retirado: a conexão com o Google Agenda exige registrar o app no Google Cloud (e uma verificação do Google para
+uso aberto); os calendários do sistema e o endereço iCal foram descartados. O título da gravação vem do app de
+chamada detectado.
 
 ## Perguntar sobre as reuniões
 
@@ -269,11 +244,7 @@ uma reunião continua igual).
    ◎, título **Quer que o Bkdict grave sozinho?**, texto "Começa a gravar assim que a chamada começa e para quando ela
    acaba.", botões **Agora não** (texto) e **Ativar** (secundário). Os dois marcam `autoRecordAsked`; Ativar liga
    `autoRecordMeetings`.
-3. **HOJE** (cartão de fundo levemente destacado, rótulo mono): eventos de hoje do calendário (EventKit e/ou iCal),
-   em ordem, cada um com o horário (`HH:mm`), título, "N convidados" e, no que está acontecendo agora, o botão
-   **Gravar** (ou "Gravando" se já estiver). Sem calendário configurado: ícone de calendário, "Nenhuma reunião
-   encontrada" e botão primário **Conectar calendário** (abre Ajustes). Configurado e sem eventos hoje: "Nenhuma
-   reunião hoje no calendário".
+3. (O cartão HOJE, com os eventos do calendário, saiu junto com o calendário.)
 4. **Anteriores**: rótulo-aba "Anteriores" sublinhado em Bordô e, à direita, uma lupa que abre um campo de busca
    (filtra por título, resumo e transcrição; Esc ou ✕ fecha). As reuniões agrupadas por dia com cabeçalho mono
    maiúsculo (`QUI, 15 DE OUT`; hoje = `HOJE`, ontem = `ONTEM`); cada linha: ícone de documento num quadrado neutro,
@@ -285,7 +256,7 @@ uma reunião continua igual).
 
 **Prévia à direita** (largura ~300, só quando a janela tem espaço; separada por um filete): título (Display),
 `<dia da semana> • HH:mm`, filete, rótulo **VISÃO GERAL** e o parágrafo de resumo; **PARTICIPANTES**: "Você" (Bordô)
-e as vozes com o nome e a cor de cada uma (ou os convidados, se não houver vozes); **TAREFAS** (até 5, com o dono);
+e as vozes com o nome e a cor de cada uma; **TAREFAS** (até 5, com o dono);
 botão **Abrir reunião**. Sem seleção: a reunião mais recente.
 
 ## Gravar sozinho

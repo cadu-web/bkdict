@@ -74,24 +74,6 @@
             </StackPanel>
         </Border>
 
-        <TextBlock Text="Calendário" Style="{StaticResource SectionTitle}" />
-        <Border Style="{StaticResource Card}">
-            <StackPanel>
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="GoogleConnectButton" Content="Conectar com o Google" Style="{StaticResource PrimaryButton}" Click="GoogleConnect_Click" />
-                        <Button x:Name="GoogleDisconnectButton" Content="Desconectar" Click="GoogleDisconnect_Click" Visibility="Collapsed" />
-                    </StackPanel>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Google Agenda" />
-                        <TextBlock x:Name="GoogleStatus" Style="{StaticResource Subtle}" FontSize="12" TextWrapping="Wrap" Margin="0,0,12,0"
-                                   Text="Dá o título às reuniões gravadas e sugere os nomes dos convidados" />
-                        <TextBlock x:Name="GoogleError" Style="{StaticResource ErrorText}" FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Visibility="Collapsed" />
-                    </StackPanel>
-                </DockPanel>
-            </StackPanel>
-        </Border>
-
         <DockPanel Margin="0,28,0,10">
             <Button DockPanel.Dock="Right" Content="Restaurar padrões" Click="Reset_Click" />
             <TextBlock Text="Atalhos" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />

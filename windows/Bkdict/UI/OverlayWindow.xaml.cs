@@ -48,7 +48,8 @@ public partial class OverlayWindow : Window
     // While a meeting is recorded and nothing is being dictated (docs/reunioes.md).
     private static readonly Size MeetingPill = new(112, 28), MeetingPillSide = new(32, 84);
     // A detected call, offered for recording (or for stopping when it ends).
-    private static readonly Size OfferSize = new(360, 40), OfferSide = new(52, 112);
+    // Offers stay lying down on a side too, against that edge: a call offer needs its text to be read.
+    private static readonly Size OfferSize = new(360, 40);
 
     private readonly DockGuideWindow guide = new();
     private readonly DispatcherTimer screenTimer = new() { Interval = TimeSpan.FromSeconds(0.5) };
@@ -241,7 +242,7 @@ public partial class OverlayWindow : Window
     private Size? CurrentSize()
     {
         // Offers and a meeting being recorded always show, even with the idle bar off or snoozed.
-        if (ShowsOffer) return Side ? OfferSide : OfferSize;
+        if (ShowsOffer) return OfferSize;
         if (ShowsMeetingPill) return Side ? MeetingPillSide : MeetingPill;
         if (phase == OverlayPhase.Hidden)
         {
@@ -272,7 +273,7 @@ public partial class OverlayWindow : Window
 
         if (ShowsOffer && offer is { } current)
         {
-            Root.Child = Side ? OfferSideContent(current) : OfferContent(current);
+            Root.Child = OfferContent(current);
             if (Side) Root.ToolTip = current.Text;
         }
         else if (ShowsMeetingPill)
@@ -345,20 +346,6 @@ public partial class OverlayWindow : Window
         left.Children.Add(label);
         row.Children.Add(left);
         return row;
-    }
-
-    private UIElement OfferSideContent(Offer current)
-    {
-        var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        var icon = Glyph("\uE716", Osso, 15);
-        column.Children.Add(icon);
-        var run = ActionButton(current.ActionGlyph, Accent, current.ActionLabel, () => RunOffer(current));
-        run.Margin = new Thickness(0, 10, 0, 0);
-        column.Children.Add(run);
-        var dismiss = ActionButton("\uE711", Frozen(OssoColor, 0.12), "Dispensar", () => DismissOffer(current));
-        dismiss.Margin = new Thickness(0, 8, 0, 0);
-        column.Children.Add(dismiss);
-        return column;
     }
 
     private void RunOffer(Offer current)

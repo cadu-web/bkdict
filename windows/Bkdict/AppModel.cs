@@ -151,7 +151,7 @@ public sealed class AppModel : ObservableObject
         set { settings.AutoRecordAsked = value; Save(); OnPropertyChanged(); }
     }
 
-    /// Set by the main window: opens Ajustes (the gear and "Conectar calendário" on the Reuniões page).
+    /// Set by the main window: opens Ajustes (the gear on the Reuniões page).
     public Action? ShowSettings { get; set; }
 
     public bool SoundsEnabled

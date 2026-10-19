@@ -86,7 +86,6 @@ final class OverlayWindow {
         static let busySide = NSSize(width: 40, height: 40)
         static let meeting = NSSize(width: 112, height: 28)
         static let offer = NSSize(width: 360, height: 40)
-        static let offerSide = NSSize(width: 52, height: 112)
         static let meetingSide = NSSize(width: 32, height: 84)
     }
 
@@ -156,7 +155,8 @@ final class OverlayWindow {
         case .hidden:
             let snoozed = hiddenUntil.map { $0 > Date() } ?? false
             guard (showsIdleBar && !snoozed) || state.meetingSince != nil || state.offer != nil else { return nil }
-            if state.offer != nil { return side ? Size.offerSide : Size.offer }
+            // The offer keeps its text on a side too: a card lying against that edge, not a column of icons.
+            if state.offer != nil { return Size.offer }
             if state.hovering { return side ? Size.hoveredSide : Size.hovered }
             if state.meetingSince != nil { return side ? Size.meetingSide : Size.meeting }
             return side ? Size.idleSide : Size.idle
@@ -292,7 +292,7 @@ private struct BarView: View {
         switch state.phase {
         case .hidden:
             if let offer = state.offer {
-                AnyView(OfferView(offer: offer, vertical: side, accept: { state.onAcceptOffer(offer) }, dismiss: state.onDismissOffer))
+                AnyView(OfferView(offer: offer, accept: { state.onAcceptOffer(offer) }, dismiss: state.onDismissOffer))
             } else if state.hovering {
                 side ? AnyView(idleSide) : AnyView(idle)
             } else if let since = state.meetingSince {
@@ -546,48 +546,32 @@ enum MeetingOffer: Equatable {
 
 private struct OfferView: View {
     let offer: MeetingOffer
-    let vertical: Bool
     let accept: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
-        Group {
-            if vertical {
-                VStack(spacing: 8) {
-                    Image(systemName: "video").font(.system(size: 13)).foregroundStyle(Theme.accentOnTinta)
-                    BarButton(systemImage: offer.isStop ? "stop.fill" : "record.circle", fill: Theme.accentOnTinta, help: offer.action, action: accept)
-                    BarButton(systemImage: "xmark", fill: Theme.onAccent.opacity(0.12), help: "Agora não", action: dismiss)
-                }
-                .padding(.vertical, 8)
-            } else {
-                HStack(spacing: 10) {
-                    Circle().fill(Theme.accentOnTinta).frame(width: 8, height: 8)
-                    Text(offer.text)
-                        .font(Theme.body(13, .medium))
-                        .foregroundStyle(Theme.onAccent)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Button(action: accept) {
-                        Text(offer.action)
-                            .font(Theme.body(12, .semibold))
-                            .foregroundStyle(Theme.onAccent)
-                            .padding(.horizontal, 10)
-                            .frame(height: 26)
-                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.accentOnTinta))
-                    }
-                    .buttonStyle(.plain)
-                    BarButton(systemImage: "xmark", fill: Theme.onAccent.opacity(0.12), help: "Agora não", action: dismiss)
-                }
-                .padding(.leading, 14)
-                .padding(.trailing, 6)
+        HStack(spacing: 10) {
+            Circle().fill(Theme.accentOnTinta).frame(width: 8, height: 8)
+            Text(offer.text)
+                .font(Theme.body(13, .medium))
+                .foregroundStyle(Theme.onAccent)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Button(action: accept) {
+                Text(offer.action)
+                    .font(Theme.body(12, .semibold))
+                    .foregroundStyle(Theme.onAccent)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.accentOnTinta))
             }
+            .buttonStyle(.plain)
+            BarButton(systemImage: "xmark", fill: Theme.onAccent.opacity(0.12), help: "Agora não", action: dismiss)
         }
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
         .help(offer.text)
     }
-}
-
-private extension MeetingOffer {
-    var isStop: Bool { if case .stop = self { true } else { false } }
 }
 
 /// The idle bar while a meeting is recorded: a dot, the elapsed time and a stop button.

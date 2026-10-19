@@ -28,8 +28,6 @@ struct Meeting: Codable, Identifiable, Hashable {
     var segments: [Segment] = []
     /// A name per voice; "" keeps the default "Pessoa N". Optional so meetings saved before phase 3 still load.
     var speakers: [String]?
-    /// Who was invited, from the calendar event going on when the recording started (phase 4).
-    var attendees: [String]?
     /// The text of the tasks marked done in the summary.
     var doneTasks: [String]?
     var summary: String?
@@ -41,12 +39,6 @@ struct Meeting: Codable, Identifiable, Hashable {
     /// `[mm:ss] Você: …`, one line per segment; the format the summary reads and "Copiar transcrição" copies.
     var transcript: String {
         segments.map { "[\(Self.clock($0.start))] \(label(for: $0)): \($0.text)" }.joined(separator: "\n")
-    }
-
-    /// What the AI reads: the attendees first, when known, to recognize names said in the conversation.
-    var transcriptForAI: String {
-        guard let attendees, !attendees.isEmpty else { return transcript }
-        return "Convidados: \(attendees.joined(separator: ", "))\n\n\(transcript)"
     }
 
     /// "Você", the voice's name, "Pessoa N", or "Eles" when the voices were not split.
@@ -87,8 +79,6 @@ final class MeetingCenter: ObservableObject {
     var transcribe: (Data) async throws -> String = { _ in "" }
     /// Set by AppController: the Dictionary's corrections.
     var correct: (String) -> String = { $0 }
-    /// The calendars that name a meeting and list who was invited (phase 4).
-    let calendar = MeetingCalendar()
 
     private var recording: (meeting: Meeting, mic: AudioRecorder, micFile: WavFileWriter,
                             system: AnyObject?, systemFile: WavFileWriter)?
@@ -104,12 +94,9 @@ final class MeetingCenter: ObservableObject {
         guard recording == nil else { return }
         let now = Date()
         let id = Self.idFormatter.string(from: now)
-        let event = calendar.currentEvent()
-        let name = event?.title ?? app
-        let title = name.map { "\($0) · \(Self.titleFormatter.string(from: now))" } ?? "Reunião de \(Self.titleFormatter.string(from: now))"
+        let title = app.map { "\($0) · \(Self.titleFormatter.string(from: now))" } ?? "Reunião de \(Self.titleFormatter.string(from: now))"
         var meeting = Meeting(id: id, title: title, startedAt: now)
         meeting.app = app
-        meeting.attendees = event?.attendees
         do {
             try FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
             let micFile = try WavFileWriter(url: meeting.micURL)
@@ -361,7 +348,7 @@ final class MeetingCenter: ObservableObject {
             meeting.summary = "## Resumo\nNenhuma fala foi captada nesta gravação."
         } else {
             do {
-                meeting.summary = try await LLM.summarizeMeeting(meeting.transcriptForAI)
+                meeting.summary = try await LLM.summarizeMeeting(meeting.transcript)
             } catch {
                 meeting.summary = "## Resumo\nO resumo não foi gerado: \(error.localizedDescription). "
                     + "Configure a IA em Modelos e use \u{201C}Refazer resumo\u{201D}."
