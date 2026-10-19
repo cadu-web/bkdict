@@ -65,16 +65,10 @@ enum Settings {
         set { defaults.set(newValue, forKey: "showsDictationBar") }
     }
 
-    /// Read the Mac's calendars (EventKit) to name meetings and suggest attendees (phase 4 of meetings).
-    static var useSystemCalendars: Bool {
-        get { defaults.bool(forKey: "useSystemCalendars") }
-        set { defaults.set(newValue, forKey: "useSystemCalendars") }
-    }
-
-    /// An iCal (.ics) address, e.g. Google Calendar's secret address.
-    static var calendarICS: String {
-        get { defaults.string(forKey: "calendarICS") ?? "" }
-        set { defaults.set(newValue, forKey: "calendarICS") }
+    /// The Google account whose calendar is connected; the token itself is in the Keychain.
+    static var googleEmail: String? {
+        get { defaults.string(forKey: "googleEmail") }
+        set { defaults.set(newValue, forKey: "googleEmail") }
     }
 
     /// Record a detected call straight away and stop when it ends, instead of offering (meetings screen v3).

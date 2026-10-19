@@ -78,14 +78,17 @@
         <Border Style="{StaticResource Card}">
             <StackPanel>
                 <DockPanel>
-                    <TextBox x:Name="CalendarBox" DockPanel.Dock="Right" Width="320" LostFocus="Calendar_LostFocus" KeyDown="Calendar_KeyDown" />
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="GoogleConnectButton" Content="Conectar com o Google" Style="{StaticResource PrimaryButton}" Click="GoogleConnect_Click" />
+                        <Button x:Name="GoogleDisconnectButton" Content="Desconectar" Click="GoogleDisconnect_Click" Visibility="Collapsed" />
+                    </StackPanel>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Endereço iCal" />
-                        <TextBlock Text="Dá o título às reuniões e sugere os nomes dos convidados" Style="{StaticResource Subtle}" FontSize="12" TextWrapping="Wrap" Margin="0,0,12,0" />
+                        <TextBlock Text="Google Agenda" />
+                        <TextBlock x:Name="GoogleStatus" Style="{StaticResource Subtle}" FontSize="12" TextWrapping="Wrap" Margin="0,0,12,0"
+                                   Text="Dá o título às reuniões gravadas e sugere os nomes dos convidados" />
+                        <TextBlock x:Name="GoogleError" Style="{StaticResource ErrorText}" FontSize="12" TextWrapping="Wrap" Margin="0,4,12,0" Visibility="Collapsed" />
                     </StackPanel>
                 </DockPanel>
-                <TextBlock Style="{StaticResource Subtle}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"
-                           Text="Google Agenda: Configurações → sua agenda → Integrar agenda → Endereço secreto no formato iCal. Outlook: Configurações → Calendário → Calendários compartilhados → Publicar um calendário → link ICS." />
             </StackPanel>
         </Border>
 

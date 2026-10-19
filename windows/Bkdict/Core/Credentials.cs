@@ -4,15 +4,21 @@ using System.Text;
 
 namespace Bkdict.Core;
 
-/// API keys live in the Windows Credential Manager (the Keychain counterpart), never in settings.json.
+/// API keys and the Google Calendar authorization live in the Windows Credential Manager (the Keychain
+/// counterpart), never in settings.json.
 public static class Credentials
 {
     private const uint CredTypeGeneric = 1;
     private const uint CredPersistLocalMachine = 2;
 
-    public static string? Get(LlmProvider provider)
+    public static string? Get(LlmProvider provider) => Get(provider.ToString().ToLowerInvariant());
+
+    public static void Set(LlmProvider provider, string? value) => Set(provider.ToString().ToLowerInvariant(), value);
+
+    /// A secret by name, stored as "Bkdict/<name>" (e.g. "google-calendar").
+    public static string? Get(string name)
     {
-        if (!CredRead(Target(provider), CredTypeGeneric, 0, out var pointer)) return null;
+        if (!CredRead(Target(name), CredTypeGeneric, 0, out var pointer)) return null;
         try
         {
             var credential = Marshal.PtrToStructure<CREDENTIAL>(pointer);
@@ -28,9 +34,9 @@ public static class Credentials
         }
     }
 
-    public static void Set(LlmProvider provider, string? value)
+    public static void Set(string name, string? value)
     {
-        var target = Target(provider);
+        var target = Target(name);
         CredDelete(target, CredTypeGeneric, 0);
         if (string.IsNullOrEmpty(value)) return;
 
@@ -46,7 +52,7 @@ public static class Credentials
                 CredentialBlobSize = (uint)bytes.Length,
                 CredentialBlob = blob,
                 Persist = CredPersistLocalMachine,
-                UserName = provider.ToString().ToLowerInvariant(),
+                UserName = name,
             };
             if (!CredWrite(ref credential, 0))
             {
@@ -59,7 +65,7 @@ public static class Credentials
         }
     }
 
-    private static string Target(LlmProvider provider) => "Bkdict/" + provider.ToString().ToLowerInvariant();
+    private static string Target(string name) => "Bkdict/" + name;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct CREDENTIAL

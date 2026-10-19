@@ -201,7 +201,7 @@ public sealed class AppController
                 dismissed: () => { });
         };
         detector.Start();
-        IcsCalendar.Start();
+        GoogleCalendar.Start();
     }
 
     private void StartMeeting(string? app = null)
@@ -209,7 +209,7 @@ public sealed class AppController
         var now = DateTimeOffset.Now;
         var meeting = Meeting.New(now, app);
         // The calendar event happening now names the meeting and lists who was invited.
-        if (IcsCalendar.Current(now) is { } calendarEvent)
+        if (GoogleCalendar.Current(now) is { } calendarEvent)
         {
             meeting.Title = $"{calendarEvent.Title} · {now:dd/MM}, {now:HH:mm}";
             meeting.Attendees = calendarEvent.Attendees;

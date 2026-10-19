@@ -66,7 +66,8 @@ private struct MeetingHome: View {
                                 RecordingBanner(since: since) { meetings.stop() }
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                             }
-                            TodayCard(meetings: meetings, calendar: calendar, connect: openSettings)
+                            TodayCard(meetings: meetings, calendar: calendar,
+                                      connect: { Task { await calendar.google.connect() } })
                             past
                         }
                         .padding(.horizontal, 36)
@@ -257,8 +258,18 @@ private struct TodayCard: View {
                         Text("Nenhuma reunião encontrada")
                             .font(Theme.display(18))
                             .foregroundStyle(Theme.secondary)
-                        Button("Conectar calendário", action: connect)
-                            .buttonStyle(PrimaryButtonStyle())
+                        if calendar.google.connecting {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text("Continue no navegador…").foregroundStyle(Theme.secondary)
+                            }
+                        } else {
+                            Button(action: connect) { Label("Conectar Google Agenda", systemImage: "calendar.badge.plus") }
+                                .buttonStyle(PrimaryButtonStyle())
+                        }
+                        if let error = calendar.google.error {
+                            Text(error).font(Theme.body(12)).foregroundStyle(Theme.accent).multilineTextAlignment(.center)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 18)
@@ -300,6 +311,10 @@ private struct TodayCard: View {
                 }
             }
             Spacer()
+            if happening, let link = event.link, let url = URL(string: link) {
+                Button { NSWorkspace.shared.open(url) } label: { Label("Entrar", systemImage: "video") }
+                    .buttonStyle(SecondaryButtonStyle())
+            }
             if happening {
                 if meetings.recordingSince != nil {
                     Text("Gravando").font(Theme.mono(10, .medium)).tracking(0.8).textCase(.uppercase).foregroundStyle(Theme.accent)

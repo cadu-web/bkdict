@@ -63,7 +63,7 @@ public partial class MeetingsPage : UserControl, IOwnScrolling
                 Render();
             }
         });
-        IcsCalendar.Changed += () => Dispatcher.InvokeAsync(() => { if (selected == null) Render(); });
+        GoogleCalendar.Changed += () => Dispatcher.InvokeAsync(() => { if (selected == null) Render(); });
         // The preview appears beside the list only when the page is wide enough.
         SizeChanged += (_, _) => { if (selected == null && (ActualWidth >= 900) != wide) Render(); };
         Render();
@@ -261,7 +261,7 @@ public partial class MeetingsPage : UserControl, IOwnScrolling
         label.Margin = new Thickness(0, 0, 0, 12);
         stack.Children.Add(label);
 
-        if (!IcsCalendar.IsConfigured)
+        if (!GoogleCalendar.IsConfigured)
         {
             var empty = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 16) };
             var icon = Glyph("", 26, "BrandSecondary");
@@ -271,33 +271,56 @@ public partial class MeetingsPage : UserControl, IOwnScrolling
             none.HorizontalAlignment = HorizontalAlignment.Center;
             none.Margin = new Thickness(0, 10, 0, 14);
             empty.Children.Add(none);
-            var connect = PrimaryButton(null, "Conectar calendário", () => model.ShowSettings?.Invoke());
+            var connect = PrimaryButton(null, GoogleCalendar.IsConnecting ? "Conectando…" : "Conectar calendário",
+                                        () => _ = GoogleCalendar.ConnectAsync());
             connect.HorizontalAlignment = HorizontalAlignment.Center;
             empty.Children.Add(connect);
+            if (GoogleCalendar.LastError is { } error)
+            {
+                var problem = Text(error, 12, fg: "BrandError");
+                problem.HorizontalAlignment = HorizontalAlignment.Center;
+                problem.TextWrapping = TextWrapping.Wrap;
+                problem.Margin = new Thickness(0, 10, 0, 0);
+                empty.Children.Add(problem);
+            }
             stack.Children.Add(empty);
         }
         else
         {
             var now = DateTimeOffset.Now;
-            var events = IcsCalendar.Today(now);
+            var events = GoogleCalendar.Today(now);
             if (events.Count == 0)
             {
                 var none = Text("Nenhuma reunião hoje no calendário", 14, fg: "BrandSecondary");
                 none.Margin = new Thickness(0, 4, 0, 4);
                 stack.Children.Add(none);
             }
-            var current = IcsCalendar.Current(now);
+            var current = GoogleCalendar.Current(now);
             foreach (var calendarEvent in events)
             {
                 var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 4, 0, 4) };
                 if (calendarEvent == current)
                 {
+                    var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                    if (calendarEvent.Link is { } link)
+                    {
+                        // Opens the call (Meet, Zoom, Teams) from the event.
+                        var join = SecondaryButton("Entrar", () =>
+                        {
+                            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(link) { UseShellExecute = true })?.Dispose(); }
+                            catch (Exception e) { Log.Write("open meeting link: " + e.Message); }
+                        });
+                        join.Margin = new Thickness(0, 0, 8, 0);
+                        join.VerticalAlignment = VerticalAlignment.Center;
+                        actions.Children.Add(join);
+                    }
                     UIElement action = model.IsMeetingRecording
                         ? Text("GRAVANDO", 10, FontWeights.Medium, "BrandAccent", "MonoFont")
                         : PrimaryButton("", "Gravar", () => model.ToggleMeeting?.Invoke());
                     if (action is FrameworkElement element) element.VerticalAlignment = VerticalAlignment.Center;
-                    DockPanel.SetDock(action, Dock.Right);
-                    row.Children.Add(action);
+                    actions.Children.Add(action);
+                    DockPanel.SetDock(actions, Dock.Right);
+                    row.Children.Add(actions);
                 }
                 var time = Text(calendarEvent.Start.LocalDateTime.ToString("HH:mm", PtBr), 12, FontWeights.Medium, "BrandSecondary", "MonoFont");
                 time.Width = 52;

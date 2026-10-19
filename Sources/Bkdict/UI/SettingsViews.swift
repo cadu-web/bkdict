@@ -28,7 +28,6 @@ private struct MicrophoneRow: View {
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     let meetings: MeetingCenter
-    @State private var calendarDenied = false
 
     var body: some View {
         Page {
@@ -46,27 +45,8 @@ struct SettingsView: View {
             }
 
             SectionCard(title: "Calendário",
-                        footer: "O evento que está acontecendo dá o título da reunião gravada e a lista de convidados, que ajuda a dar nome às vozes. Endereço iCal: no Google Agenda, Configurações da agenda → Endereço secreto no formato iCal; no Outlook, Calendário → Publicar calendário → link ICS.") {
-                SettingRow(title: "Usar os calendários do Mac",
-                           detail: calendarDenied ? "Sem permissão: libere o Bkdict em Ajustes do Sistema → Privacidade e Segurança → Calendários"
-                                                  : "Google, Outlook e iCloud adicionados em Ajustes do Sistema → Contas de Internet") {
-                    Toggle("", isOn: Binding(get: { model.useSystemCalendars }, set: { on in
-                        guard on else { model.useSystemCalendars = false; return }
-                        Task { @MainActor in
-                            let granted = await meetings.calendar.requestAccess()
-                            model.useSystemCalendars = granted
-                            calendarDenied = !granted
-                        }
-                    }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-                SettingRow(title: "Endereço iCal", divider: false) {
-                    TextField("https://…/basic.ics", text: $model.calendarICS)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 280)
-                        .onSubmit { Task { await meetings.calendar.reloadICS() } }
-                }
+                        footer: "O evento que está acontecendo dá o título da reunião gravada e a lista de convidados, que ajuda a dar nome às vozes. O Bkdict só lê a agenda; o acesso fica guardado no Keychain deste Mac.") {
+                GoogleCalendarRow(google: meetings.calendar.google)
             }
 
             SectionCard(title: "Ditado") {
@@ -139,5 +119,31 @@ private extension SettingsView {
             text += " Com Fn, deixe \u{201C}Ao pressionar 🌐\u{201D} como \u{201C}Não fazer nada\u{201D} em Ajustes do Sistema → Teclado."
         }
         return text
+    }
+}
+
+/// Google Calendar: connect with the browser login, or the connected account with Desconectar.
+private struct GoogleCalendarRow: View {
+    @ObservedObject var google: GoogleCalendar
+
+    var body: some View {
+        SettingRow(title: "Google Agenda",
+                   detail: google.error ?? (google.email.map { "Conectado como \($0)" } ?? "Leia os eventos da sua agenda do Google"),
+                   divider: false) {
+            if google.isConnected {
+                Button("Desconectar") { google.disconnect() }
+                    .buttonStyle(SecondaryButtonStyle())
+            } else if google.connecting {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Continue no navegador…").font(Theme.body(12)).foregroundStyle(Theme.secondary)
+                }
+            } else {
+                Button { Task { await google.connect() } } label: {
+                    Label("Conectar com o Google", systemImage: "calendar.badge.plus")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            }
+        }
     }
 }

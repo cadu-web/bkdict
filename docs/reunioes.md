@@ -202,24 +202,36 @@ Fica para quando houver como testar; os convidados do calendário (fase 4) vão 
 
 # Fase 4 — calendário, perguntas e tarefas
 
-## Calendário
+## Calendário — Google Agenda
 
-- **Mac**: os calendários que já estão no macOS (Google, Outlook, iCloud… adicionados em Ajustes do Sistema →
-  Contas de Internet), pelo EventKit, com acesso total aos eventos (`NSCalendarsFullAccessUsageDescription`).
-  Pedido de permissão ao ligar a opção.
-- **Mac e Windows**: endereço iCal (`.ics`) colado em Ajustes — no Google Agenda, "Endereço secreto no formato iCal";
-  no Outlook, "Publicar calendário" → link ICS. Lido de novo a cada 15 min. Leitura: `VEVENT` com `DTSTART`, `DTEND`
-  (ou `DURATION`), `SUMMARY`, `ATTENDEE`/`ORGANIZER` (`CN=`, ou o e-mail antes do `@`), `STATUS:CANCELLED` ignorado,
-  datas `Z`, com `TZID` (fuso pelo nome) ou flutuantes (fuso local), linhas dobradas; repetição `RRULE` com
-  `FREQ=DAILY|WEEKLY`, `INTERVAL`, `BYDAY`, `UNTIL`, `COUNT` e `EXDATE`, expandida só para hoje ± 1 dia.
-- Ajustes, seção **Calendário**: Mac — "Usar os calendários do Mac" (padrão: desligado) e "Endereço iCal"; Windows —
-  "Endereço iCal". Um texto curto embaixo diz como pegar o endereço no Google e no Outlook.
-- **Ao começar a gravar** (à mão ou pelo convite): o evento que está acontecendo agora (começa até 10 min depois ou
-  já começou e não acabou; o de início mais próximo) dá o **título** (`<título do evento> · dd/MM, HH:mm`) e a lista de
-  **convidados** (`attendees`, sem a própria pessoa quando der para saber — no EventKit, `isCurrentUser`).
-- Convidados ajudam a dar nome: no painel Vozes, o campo de nome sugere os convidados (menu ao lado do campo,
-  "Convidados ▾", com os nomes; escolher preenche e salva). Na transcrição enviada à IA, uma linha antes:
-  `Convidados: Ana, Bruno` — a instrução diz que é só para reconhecer nomes ditos, não para atribuir falas.
+Conexão direta com a conta Google, como "Fazer login com o Google", sem servidor: o padrão OAuth para apps de
+desktop (código de autorização com PKCE e redirecionamento para `http://127.0.0.1:<porta livre>`).
+
+- **Credencial**: `Resources/google-oauth.json` (`{"clientId": "…", "clientSecret": "…"}`), um cliente OAuth do
+  tipo **App para computador** do Google Cloud da BKDG, com a Google Calendar API ativada. Para apps de desktop o
+  Google não trata o "secret" como segredo; o arquivo vai junto do app (Mac: `Contents/Resources`; Windows: recurso
+  embutido). Vazio: o botão avisa que a credencial não foi configurada.
+- **Conectar** (Ajustes → Calendário e o "Conectar calendário" da tela de Reuniões): abre no navegador
+  `https://accounts.google.com/o/oauth2/v2/auth` com `scope=openid email https://www.googleapis.com/auth/calendar.readonly`,
+  `access_type=offline`, `prompt=consent`, `code_challenge` S256 e `state`; um servidor local de uma requisição
+  recebe o código, responde com uma página "Pronto, pode voltar ao Bkdict" e troca o código em
+  `https://oauth2.googleapis.com/token` (com `code_verifier`). Tempo máximo: 3 min.
+- **Guarda**: o refresh token no Keychain (Mac) / Gerenciador de Credenciais (Windows); o e-mail (do `id_token`) nos
+  ajustes. Access token só em memória, renovado quando vence.
+- **Eventos**: `GET https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin&timeMax&singleEvents=true&orderBy=startTime`
+  de ontem a amanhã, a cada 5 min e ao conectar; ignora cancelados e eventos de dia inteiro. De cada evento: título,
+  início, fim, convidados (`displayName` ou o e-mail antes do `@`; sem `self` e sem salas — `resource`) e o link da
+  chamada (`hangoutLink` ou o `entryPoints` de vídeo do `conferenceData`).
+- **Desconectar**: revoga em `https://oauth2.googleapis.com/revoke` e apaga o token e o e-mail.
+- Ajustes, seção **Calendário**: linha "Google Agenda" com o botão **Conectar com o Google**; conectado,
+  "Conectado como fulano@empresa.com" e **Desconectar**; erros aparecem na própria linha.
+- Saem os calendários do sistema (EventKit) e o endereço iCal.
+- **Hoje** (tela de Reuniões) mostra os eventos do Google; no que está acontecendo, além de **Gravar**, o botão
+  **Entrar** abre o link da chamada.
+- **Ao começar a gravar**: o evento que está acontecendo agora (começa até 10 min depois ou já começou e não
+  acabou; o de início mais próximo) dá o **título** e os **convidados**, como antes.
+- Convidados ajudam a dar nome: no painel Vozes, "Convidados ▾" com os nomes; na transcrição enviada à IA, a linha
+  `Convidados: Ana, Bruno` (só para reconhecer nomes ditos).
 
 ## Perguntar sobre as reuniões
 

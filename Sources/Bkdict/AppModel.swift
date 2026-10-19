@@ -36,12 +36,6 @@ final class AppModel: ObservableObject {
     @Published var microphone = Settings.microphone {
         didSet { Settings.microphone = microphone }
     }
-    @Published var useSystemCalendars = Settings.useSystemCalendars {
-        didSet { Settings.useSystemCalendars = useSystemCalendars }
-    }
-    @Published var calendarICS = Settings.calendarICS {
-        didSet { Settings.calendarICS = calendarICS }
-    }
     @Published var autoRecordMeetings = Settings.autoRecordMeetings {
         didSet { Settings.autoRecordMeetings = autoRecordMeetings }
     }

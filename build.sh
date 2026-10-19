@@ -16,6 +16,8 @@ cp -R Resources/ProviderIcons "$APP/Contents/Resources/ProviderIcons"
 # Fontes da marca (IBM Plex, Zilla Slab), registradas pelo ATSApplicationFontsPath do Info.plist.
 cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 cp Resources/MenuBarIcon.png Resources/MenuBarIcon@2x.png "$APP/Contents/Resources/"
+# Google Calendar's OAuth client (a desktop client: Google does not treat its secret as confidential).
+cp Resources/google-oauth.json "$APP/Contents/Resources/"
 # Sparkle (atualização automática), achado pelo rpath @executable_path/../Frameworks do Package.swift.
 mkdir -p "$APP/Contents/Frameworks"
 cp -R "$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/Sparkle.framework" "$APP/Contents/Frameworks/"

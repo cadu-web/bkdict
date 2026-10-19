@@ -133,20 +133,6 @@ public sealed class AppModel : ObservableObject
         set { settings.DictationBarEdge = value; Save(); }
     }
 
-    /// Saving restarts the calendar refresh with the new address.
-    public string CalendarIcsUrl
-    {
-        get => settings.CalendarIcsUrl ?? "";
-        set
-        {
-            var url = value.Trim();
-            if (url == (settings.CalendarIcsUrl ?? "")) return;
-            settings.CalendarIcsUrl = url.Length == 0 ? null : url;
-            Save();
-            IcsCalendar.Start();
-        }
-    }
-
     public bool DetectMeetings
     {
         get => settings.DetectMeetings;
