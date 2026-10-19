@@ -1,207 +1,979 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 using Bkdict.Core;
 
 namespace Bkdict.UI;
 
+/// Meetings: record one, then read its summary and its transcript (Você / Eles). Mirrors the macOS
+/// MeetingsViews.swift: a list of cards, and a detail with tabs, summary blocks, a conversation and skeletons.
 public partial class MeetingsPage : UserControl
 {
+    private static readonly CultureInfo PtBr = new("pt-BR");
+    private const string Icons = "Segoe Fluent Icons, Segoe MDL2 Assets";
+
     private readonly AppModel model;
     private Meeting? selected;
+    private string tab = "summary";
+    private string? renderedStatus;
+    private readonly List<TextBlock> timers = new();
+    // Live parts of a skeleton view, updated in place so the pulsing does not restart on every progress tick.
+    private TextBlock? progressText;
+    private ProgressBar? progressBar;
+    private readonly HashSet<Meeting> watched = new();
+
+    private static bool Animate => SystemParameters.ClientAreaAnimation;
 
     public MeetingsPage(AppModel model)
     {
         this.model = model;
         InitializeComponent();
-        MeetingList.ItemsSource = model.Meetings;
-        model.Meetings.CollectionChanged += (_, _) => UpdateEmpty();
-        model.PropertyChanged += (_, e) =>
+        model.Meetings.CollectionChanged += (_, _) => Dispatcher.InvokeAsync(() =>
         {
-            if (e.PropertyName is nameof(AppModel.IsMeetingRecording) or nameof(AppModel.MeetingElapsed)) UpdateRecording();
-            if (e.PropertyName == nameof(AppModel.IsMeetingRecording))
+            if (selected != null && !model.Meetings.Contains(selected)) selected = null;
+            Render();
+        });
+        model.PropertyChanged += (_, e) => Dispatcher.InvokeAsync(() =>
+        {
+            if (e.PropertyName == nameof(AppModel.MeetingElapsed))
             {
-                // A new recording goes to the top of the list: show it.
-                if (model.RecordingMeeting is { } meeting) MeetingList.SelectedItem = meeting;
-                UpdateActions();
+                foreach (var timer in timers) timer.Text = Meeting.Clock(model.MeetingElapsed.TotalSeconds);
             }
-        };
-        UpdateRecording();
-        UpdateEmpty();
-        if (model.Meetings.Count > 0) MeetingList.SelectedIndex = 0;
+            else if (e.PropertyName == nameof(AppModel.IsMeetingRecording))
+            {
+                Render();
+            }
+        });
+        Render();
     }
 
-    private void UpdateRecording()
+    private void Render()
     {
-        RecordButton.Content = model.IsMeetingRecording ? "Parar gravação" : "Gravar reunião";
-        ElapsedText.Text = model.IsMeetingRecording ? "● " + Meeting.Clock(model.MeetingElapsed.TotalSeconds) : "";
+        foreach (var added in model.Meetings.Where(m => watched.Add(m))) added.PropertyChanged += Meeting_PropertyChanged;
+        timers.Clear();
+        progressText = null;
+        progressBar = null;
+        Root.Children.Clear();
+        Root.Children.Add(selected is { } meeting ? BuildDetail(meeting) : BuildList());
     }
 
-    private void UpdateEmpty()
+    private void Meeting_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        bool empty = model.Meetings.Count == 0;
-        EmptyText.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
-        Body.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
-        if (!empty && MeetingList.SelectedItem == null) MeetingList.SelectedIndex = 0;
-    }
-
-    private void MeetingList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (selected != null) selected.PropertyChanged -= Selected_PropertyChanged;
-        selected = MeetingList.SelectedItem as Meeting;
-        if (selected != null) selected.PropertyChanged += Selected_PropertyChanged;
-        DeleteConfirm.Visibility = Visibility.Collapsed;
-        RenderMeta();
-        RenderBody();
-    }
-
-    private void Selected_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
+        if (sender is not Meeting meeting) return;
         Dispatcher.InvokeAsync(() =>
         {
-            RenderMeta();
-            if (e.PropertyName is nameof(Meeting.Segments) or nameof(Meeting.Summary) or nameof(Meeting.Status)) RenderBody();
+            if (selected == null)
+            {
+                if (e.PropertyName is nameof(Meeting.Status) or nameof(Meeting.Progress) or nameof(Meeting.Duration)
+                    or nameof(Meeting.Segments)) Render();
+                return;
+            }
+            if (meeting != selected) return;
+            if (e.PropertyName == nameof(Meeting.Progress) && meeting.Status == renderedStatus && progressText != null)
+            {
+                progressText.Text = ProgressLabel(meeting);
+                if (progressBar != null) progressBar.Value = meeting.Progress;
+                return;
+            }
+            if (e.PropertyName is nameof(Meeting.Status) or nameof(Meeting.Segments) or nameof(Meeting.Summary)
+                or nameof(Meeting.Error) or nameof(Meeting.SystemAudio) or nameof(Meeting.Duration)) Render();
         });
+    }
+
+    private void Open(Meeting? meeting)
+    {
+        selected = meeting;
+        tab = "summary";
+        renderedStatus = null;
+        Render();
+        if (Root.Children.Count > 0 && meeting != null) SlideIn(Root.Children[0], 24, 0);
+        (Parent as ScrollViewer)?.ScrollToTop();
+    }
+
+    // MARK: - List
+
+    private UIElement BuildList()
+    {
+        var page = new StackPanel();
+
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 20), LastChildFill = true };
+        if (!model.IsMeetingRecording)
+        {
+            var record = PrimaryButton("", "Gravar reunião", () => model.ToggleMeeting?.Invoke());
+            record.VerticalAlignment = VerticalAlignment.Bottom;
+            DockPanel.SetDock(record, Dock.Right);
+            header.Children.Add(record);
+        }
+        var titles = new StackPanel { Margin = new Thickness(0, 0, 16, 0) };
+        titles.Children.Add(new TextBlock { Text = "Reuniões", Style = (Style)FindResource("PageTitle") });
+        titles.Children.Add(Text("Grava o seu microfone e o áudio do computador, transcreve e resume. Tudo fica neste PC.",
+                                 14, fg: "BrandSecondary", wrap: true));
+        header.Children.Add(titles);
+        page.Children.Add(header);
+
+        if (model.IsMeetingRecording)
+        {
+            var banner = RecordingBanner();
+            banner.Margin = new Thickness(0, 0, 0, 16);
+            page.Children.Add(banner);
+            SlideIn(banner, 0, -8);
+        }
+
+        if (model.Meetings.Count == 0)
+        {
+            page.Children.Add(EmptyState());
+            return page;
+        }
+        foreach (var meeting in model.Meetings) page.Children.Add(MeetingCard(meeting));
+        return page;
+    }
+
+    private Border RecordingBanner()
+    {
+        var row = new DockPanel { LastChildFill = true };
+
+        var stop = PrimaryButton("", "Parar e resumir", () => model.ToggleMeeting?.Invoke());
+        stop.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(stop, Dock.Right);
+        row.Children.Add(stop);
+
+        var note = Text("Seu microfone e o áudio do computador", 12, fg: "BrandSecondary");
+        note.VerticalAlignment = VerticalAlignment.Center;
+        note.Margin = new Thickness(16, 0, 16, 0);
+        DockPanel.SetDock(note, Dock.Right);
+        row.Children.Add(note);
+
+        var dot = PulsingDot(12);
+        dot.VerticalAlignment = VerticalAlignment.Center;
+        dot.Margin = new Thickness(0, 0, 16, 0);
+        DockPanel.SetDock(dot, Dock.Left);
+        row.Children.Add(dot);
+
+        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        labels.Children.Add(Text("GRAVANDO REUNIÃO", 10, FontWeights.Medium, "BrandAccent", "MonoFont"));
+        var timer = Text(Meeting.Clock(model.MeetingElapsed.TotalSeconds), 28, FontWeights.Medium, "BrandText", "MonoFont");
+        timers.Add(timer);
+        labels.Children.Add(timer);
+        row.Children.Add(labels);
+
+        var banner = new Border { Padding = new Thickness(18), CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), Child = row };
+        banner.SetResourceReference(Border.BackgroundProperty, "BrandAccentTint");
+        banner.BorderBrush = AccentAt(0.35);
+        return banner;
+    }
+
+    private UIElement EmptyState()
+    {
+        var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        var icon = Glyph("", 28, "BrandAccent");
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        stack.Children.Add(icon);
+        var title = Text("Nenhuma reunião gravada", 20, FontWeights.Medium, "BrandText", "DisplayFont");
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.Margin = new Thickness(0, 10, 0, 6);
+        stack.Children.Add(title);
+        var body = Text("Comece a gravar quando a chamada começar. Ao parar, o Bkdict separa o que você disse do que os outros disseram e faz o resumo.",
+                        14, fg: "BrandSecondary", wrap: true);
+        body.TextAlignment = TextAlignment.Center;
+        body.MaxWidth = 440;
+        stack.Children.Add(body);
+        return Card(stack, new Thickness(16, 44, 16, 44));
+    }
+
+    private UIElement MeetingCard(Meeting meeting)
+    {
+        var row = new DockPanel { LastChildFill = true };
+
+        var chevron = Glyph("", 11, "BrandSecondary");
+        chevron.VerticalAlignment = VerticalAlignment.Center;
+        chevron.Margin = new Thickness(12, 0, 0, 0);
+        var shift = new TranslateTransform();
+        chevron.RenderTransform = shift;
+        DockPanel.SetDock(chevron, Dock.Right);
+        row.Children.Add(chevron);
+
+        var pill = StatusPill(meeting);
+        pill.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(pill, Dock.Right);
+        row.Children.Add(pill);
+
+        var tile = DateTile(meeting.StartedAt.LocalDateTime);
+        tile.Margin = new Thickness(0, 0, 14, 0);
+        DockPanel.SetDock(tile, Dock.Left);
+        row.Children.Add(tile);
+
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var title = Text(meeting.Title, 14, FontWeights.Medium);
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        info.Children.Add(title);
+        var meta = new List<string> { meeting.StartedAt.LocalDateTime.ToString("HH:mm", PtBr) };
+        if (meeting.Status != Meeting.Recording) meta.Add(meeting.DurationLabel);
+        if (meeting.Status == Meeting.Ready && meeting.Segments.Count > 0) meta.Add($"{meeting.Segments.Count} falas");
+        var line = Text(string.Join("  ·  ", meta), 12, fg: "BrandSecondary");
+        line.Margin = new Thickness(0, 4, 0, 0);
+        info.Children.Add(line);
+        if (meeting.Status == Meeting.Transcribing)
+        {
+            var bar = ThinProgress(meeting.Progress);
+            bar.MaxWidth = 220;
+            bar.HorizontalAlignment = HorizontalAlignment.Left;
+            bar.Margin = new Thickness(0, 6, 0, 0);
+            info.Children.Add(bar);
+        }
+        row.Children.Add(info);
+
+        var card = new Border
+        {
+            Padding = new Thickness(14), Margin = new Thickness(0, 0, 0, 8), CornerRadius = new CornerRadius(4),
+            BorderThickness = new Thickness(1), Child = row, Cursor = Cursors.Hand,
+        };
+        card.SetResourceReference(Border.BackgroundProperty, "BrandCard");
+        card.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+        card.MouseEnter += (_, _) =>
+        {
+            card.SetResourceReference(Border.BackgroundProperty, "BrandHover");
+            Move(shift, 2);
+        };
+        card.MouseLeave += (_, _) =>
+        {
+            card.SetResourceReference(Border.BackgroundProperty, "BrandCard");
+            Move(shift, 0);
+        };
+        card.MouseLeftButtonUp += (_, _) => Open(meeting);
+        return card;
+    }
+
+    private Border DateTile(DateTime date)
+    {
+        var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+        var day = Text(date.ToString("dd", PtBr), 20, FontWeights.Medium, "BrandAccent", "DisplayFont");
+        day.HorizontalAlignment = HorizontalAlignment.Center;
+        stack.Children.Add(day);
+        var month = Text(date.ToString("MMM", PtBr).Replace(".", "").ToUpperInvariant(), 9, FontWeights.Medium, "BrandSecondary", "MonoFont");
+        month.HorizontalAlignment = HorizontalAlignment.Center;
+        month.Margin = new Thickness(0, -2, 0, 0);
+        stack.Children.Add(month);
+        var tile = new Border { Width = 46, Height = 46, CornerRadius = new CornerRadius(4), Child = stack };
+        tile.SetResourceReference(Border.BackgroundProperty, "BrandAccentTint");
+        return tile;
+    }
+
+    private Border StatusPill(Meeting meeting)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        FrameworkElement dot = meeting.Status == Meeting.Recording
+            ? PulsingDot(7)
+            : new Ellipse { Width = 7, Height = 7, Fill = StatusColor(meeting) };
+        dot.VerticalAlignment = VerticalAlignment.Center;
+        dot.Margin = new Thickness(0, 0, 6, 0);
+        row.Children.Add(dot);
+        row.Children.Add(Text(StatusText(meeting).ToUpperInvariant(), 10, FontWeights.Medium, "BrandText", "MonoFont"));
+        var pill = new Border { Padding = new Thickness(8, 4, 8, 4), CornerRadius = new CornerRadius(4), Child = row };
+        pill.SetResourceReference(Border.BackgroundProperty, "BrandHover");
+        return pill;
+    }
+
+    private static string StatusText(Meeting meeting) => meeting.Status switch
+    {
+        Meeting.Recording => "Gravando",
+        Meeting.Transcribing => $"Transcrevendo {(int)Math.Round(meeting.Progress * 100)}%",
+        Meeting.Summarizing => "Resumindo",
+        Meeting.Failed => "Falhou",
+        _ => meeting.SystemAudio ? "Pronta" : "Só o seu microfone",
+    };
+
+    private Brush StatusColor(Meeting meeting)
+    {
+        bool dark = ((SolidColorBrush)FindResource("BrandBackground")).Color.R < 0x80;
+        return meeting.Status switch
+        {
+            Meeting.Ready when meeting.SystemAudio => Brand.Brush(dark ? 0x7FA88Au : 0x3F6B4Fu),
+            Meeting.Failed => (Brush)FindResource("BrandAccent"),
+            _ => Brand.Brush(0x8A6E4B),
+        };
     }
 
     // MARK: - Detail
 
-    private void RenderMeta()
+    private UIElement BuildDetail(Meeting meeting)
     {
-        Detail.Visibility = selected == null ? Visibility.Collapsed : Visibility.Visible;
-        if (selected is not { } meeting) return;
-        DetailTitle.Text = meeting.Title;
-        DetailMeta.Text = $"{meeting.StartedAt.LocalDateTime:dd/MM/yyyy HH:mm} · {meeting.DurationLabel} · {meeting.StatusLabel}";
-        MicOnlyBanner.Visibility = meeting.SystemAudio ? Visibility.Collapsed : Visibility.Visible;
-        UpdateActions();
+        var page = new StackPanel();
+        bool statusChanged = renderedStatus != null && renderedStatus != meeting.Status;
+        renderedStatus = meeting.Status;
+
+        var back = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand, Background = Brushes.Transparent,
+                                    HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 18) };
+        var arrow = Glyph("", 11, "BrandAccent");
+        arrow.VerticalAlignment = VerticalAlignment.Center;
+        arrow.Margin = new Thickness(0, 0, 6, 0);
+        back.Children.Add(arrow);
+        back.Children.Add(Text("Reuniões", 13, FontWeights.Medium, "BrandAccent"));
+        back.MouseLeftButtonUp += (_, _) => Open(null);
+        page.Children.Add(back);
+
+        // Header: title and state, then the facts.
+        var titleRow = new DockPanel { LastChildFill = true };
+        var pill = StatusPill(meeting);
+        pill.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(pill, Dock.Right);
+        titleRow.Children.Add(pill);
+        var title = Text(meeting.Title, 30, FontWeights.Medium, "BrandText", "DisplayFont", wrap: true);
+        title.Margin = new Thickness(0, 0, 12, 0);
+        titleRow.Children.Add(title);
+        page.Children.Add(titleRow);
+
+        var facts = new WrapPanel { Margin = new Thickness(0, 10, 0, 18) };
+        facts.Children.Add(Meta("", meeting.StartedAt.LocalDateTime.ToString("d 'de' MMMM, HH:mm", PtBr)));
+        if (meeting.Status != Meeting.Recording) facts.Children.Add(Meta("", meeting.DurationLabel));
+        if (meeting.Segments.Count > 0) facts.Children.Add(Meta("", $"{meeting.Segments.Count} falas"));
+        facts.Children.Add(meeting.SystemAudio ? Meta("", "Você e os participantes") : Meta("", "Só o seu microfone"));
+        page.Children.Add(facts);
+
+        if (!string.IsNullOrEmpty(meeting.Error))
+        {
+            page.Children.Add(Notice("", meeting.Error!));
+        }
+        else if (meeting.Status == Meeting.Ready && !meeting.SystemAudio)
+        {
+            page.Children.Add(Notice("", "Só o seu microfone foi gravado. Para captar os outros, confira o dispositivo de saída de som do Windows e grave de novo."));
+        }
+
+        if (meeting == model.RecordingMeeting || meeting.Status == Meeting.Recording)
+        {
+            page.Children.Add(RecordingBanner());
+            return page;
+        }
+
+        // Tabs on the left, actions on the right.
+        var bar = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 14) };
+        var actions = Actions(meeting);
+        DockPanel.SetDock(actions, Dock.Right);
+        bar.Children.Add(actions);
+        var tabs = Tabs();
+        DockPanel.SetDock(tabs, Dock.Left);
+        bar.Children.Add(tabs);
+        page.Children.Add(bar);
+
+        var content = tab == "summary" ? SummaryContent(meeting) : TranscriptContent(meeting);
+        page.Children.Add(content);
+        // New content arrives with a fade; the first view and tab switches too.
+        if (statusChanged || renderedTab != tab) SlideIn(content, 0, 8);
+        renderedTab = tab;
+        return page;
     }
 
-    private void UpdateActions()
+    private string? renderedTab;
+
+    /// "Resumo" and "Transcrição", with an underline that slides to the selected one.
+    private UIElement Tabs()
     {
-        if (selected is not { } meeting) return;
-        bool recording = meeting == model.RecordingMeeting;
-        bool busy = recording || meeting.Status is Meeting.Recording or Meeting.Transcribing or Meeting.Summarizing;
-        CopySummaryButton.IsEnabled = !string.IsNullOrWhiteSpace(meeting.Summary);
-        CopyTranscriptButton.IsEnabled = meeting.Segments.Count > 0;
-        ResummarizeButton.IsEnabled = !busy && meeting.Segments.Count > 0;
-        DeleteButton.IsEnabled = !recording;
-    }
+        var labels = new StackPanel { Orientation = Orientation.Horizontal };
+        var underline = new Rectangle { Height = 2, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom };
+        underline.SetResourceReference(Shape.FillProperty, "BrandAccent");
+        var slide = new TranslateTransform();
+        underline.RenderTransform = slide;
+        var grid = new Grid();
+        grid.Children.Add(labels);
+        grid.Children.Add(underline);
 
-    private void RenderBody()
-    {
-        SummaryPanel.Children.Clear();
-        TranscriptPanel.Children.Clear();
-        if (selected is not { } meeting) return;
+        var items = new List<(string Key, TextBlock Label)>();
+        foreach (var (key, name) in new[] { ("summary", "Resumo"), ("transcript", "Transcrição") })
+        {
+            bool active = tab == key;
+            var label = Text(name, 14, active ? FontWeights.SemiBold : FontWeights.Normal, active ? "BrandText" : "BrandSecondary");
+            var hit = new Border { Background = Brushes.Transparent, Padding = new Thickness(0, 0, 0, 9), Margin = new Thickness(0, 0, 22, 0),
+                                   Cursor = Cursors.Hand, Child = label };
+            hit.MouseLeftButtonUp += (_, _) =>
+            {
+                if (tab == key) return;
+                var from = PositionOf(items.First(i => i.Key == tab).Label, labels);
+                tab = key;
+                pendingUnderlineFrom = from;
+                Render();
+            };
+            labels.Children.Add(hit);
+            items.Add((key, label));
+        }
 
-        if (string.IsNullOrWhiteSpace(meeting.Summary))
+        grid.Loaded += (_, _) =>
         {
-            SummaryPanel.Children.Add(Subtle(meeting.Status switch
+            var target = items.First(i => i.Key == tab).Label;
+            var to = PositionOf(target, labels);
+            underline.Width = target.ActualWidth;
+            if (pendingUnderlineFrom is { } from && Animate)
             {
-                Meeting.Recording => "O resumo sai quando você parar a gravação.",
-                Meeting.Failed => "Sem resumo: a transcrição falhou.",
-                _ => "Preparando o resumo…",
-            }));
-        }
-        else
-        {
-            RenderMarkdown(meeting.Summary);
-        }
-
-        if (meeting.Segments.Count == 0)
-        {
-            TranscriptPanel.Children.Add(Subtle(meeting.Status switch
-            {
-                Meeting.Recording => "A transcrição sai quando você parar a gravação.",
-                Meeting.Transcribing => "Transcrevendo…",
-                Meeting.Failed => "A transcrição falhou: " + (meeting.Error ?? "erro desconhecido"),
-                _ => "Ninguém falou nesta gravação.",
-            }));
-            return;
-        }
-        var mono = (FontFamily)FindResource("MonoFont");
-        foreach (var segment in meeting.Segments)
-        {
-            var line = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
-            line.Inlines.Add(new Run("[" + Meeting.Clock(segment.Start) + "] ")
-            {
-                FontFamily = mono, FontSize = 12, Foreground = (Brush)FindResource("BrandTertiary"),
-            });
-            line.Inlines.Add(new Run(segment.SpeakerLabel + ": ") { FontWeight = FontWeights.SemiBold });
-            line.Inlines.Add(new Run(segment.Text));
-            TranscriptPanel.Children.Add(line);
-        }
-    }
-
-    /// Just enough Markdown for the summary: "## " headings, "- " bullets, plain paragraphs.
-    private void RenderMarkdown(string markdown)
-    {
-        foreach (var raw in markdown.Split('\n'))
-        {
-            var line = raw.TrimEnd('\r').Trim();
-            if (line.Length == 0) continue;
-            if (line.StartsWith('#'))
-            {
-                SummaryPanel.Children.Add(new TextBlock
-                {
-                    Text = line.TrimStart('#').Trim(), FontSize = 15, FontWeight = FontWeights.SemiBold,
-                    Margin = new Thickness(0, SummaryPanel.Children.Count == 0 ? 0 : 12, 0, 4), TextWrapping = TextWrapping.Wrap,
-                });
-            }
-            else if (line.StartsWith("- ") || line.StartsWith("* "))
-            {
-                var bullet = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
-                var mark = new TextBlock { Text = "•", Width = 14, Foreground = (Brush)FindResource("BrandAccent") };
-                DockPanel.SetDock(mark, Dock.Left);
-                bullet.Children.Add(mark);
-                bullet.Children.Add(new TextBlock { Text = line[2..].Replace("**", ""), TextWrapping = TextWrapping.Wrap });
-                SummaryPanel.Children.Add(bullet);
+                slide.BeginAnimation(TranslateTransform.XProperty,
+                    new DoubleAnimation(from, to, TimeSpan.FromMilliseconds(250)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
             }
             else
             {
-                SummaryPanel.Children.Add(new TextBlock
+                slide.X = to;
+            }
+            pendingUnderlineFrom = null;
+        };
+        return grid;
+    }
+
+    private double? pendingUnderlineFrom;
+
+    private static double PositionOf(FrameworkElement element, Visual within) =>
+        element.IsLoaded ? element.TranslatePoint(new Point(0, 0), (UIElement)within).X : 0;
+
+    private UIElement Actions(Meeting meeting)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 6) };
+        bool done = meeting.Status is Meeting.Ready or Meeting.Failed;
+        row.Children.Add(CopyButton("", "Copiar resumo", () => meeting.Summary, !string.IsNullOrWhiteSpace(meeting.Summary)));
+        row.Children.Add(CopyButton("", "Copiar transcrição", meeting.TranscriptText, meeting.Segments.Count > 0));
+        row.Children.Add(IconButton("", "Refazer resumo", done && meeting.Segments.Count > 0, () => model.ResummarizeMeeting?.Invoke(meeting)));
+
+        var confirm = new StackPanel { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center };
+        var question = Text("Apagar a gravação e a transcrição?", 12, fg: "BrandSecondary");
+        question.VerticalAlignment = VerticalAlignment.Center;
+        question.Margin = new Thickness(8, 0, 8, 0);
+        confirm.Children.Add(question);
+        confirm.Children.Add(PrimaryButton(null, "Apagar", () =>
+        {
+            model.DeleteMeeting(meeting);
+            Open(null);
+        }));
+        var cancel = SecondaryButton("Cancelar", () => confirm.Visibility = Visibility.Collapsed);
+        cancel.Margin = new Thickness(6, 0, 0, 0);
+        confirm.Children.Add(cancel);
+
+        row.Children.Add(IconButton("", "Apagar reunião", meeting != model.RecordingMeeting, () =>
+            confirm.Visibility = confirm.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible));
+        row.Children.Add(confirm);
+        return row;
+    }
+
+    // MARK: - Summary
+
+    private UIElement SummaryContent(Meeting meeting)
+    {
+        if (meeting.Status is Meeting.Ready or Meeting.Failed)
+        {
+            if (string.IsNullOrWhiteSpace(meeting.Summary)) return Text("Sem resumo.", 14, fg: "BrandSecondary");
+            var summary = MeetingSummary.Parse(meeting.Summary!);
+            return summary.IsEmpty ? Card(Text(meeting.Summary!, 14, wrap: true)) : SummaryView(summary);
+        }
+        var stack = new StackPanel();
+        stack.Children.Add(ProgressLine(meeting));
+        stack.Children.Add(SummarySkeleton());
+        return stack;
+    }
+
+    private UIElement SummaryView(MeetingSummary summary)
+    {
+        var stack = new StackPanel();
+        if (summary.Overview.Count > 0)
+        {
+            var text = new StackPanel();
+            foreach (var paragraph in summary.Overview)
+            {
+                var block = Text(Plain(paragraph), 15, wrap: true);
+                block.LineHeight = 23;
+                block.Margin = new Thickness(0, 0, 0, 8);
+                text.Children.Add(block);
+            }
+            var card = Card(text, new Thickness(18, 18, 18, 10));
+            card.Margin = new Thickness(0, 0, 0, 14);
+            stack.Children.Add(card);
+        }
+
+        var tasks = new StackPanel();
+        foreach (var task in summary.Tasks)
+        {
+            var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 8) };
+            var box = new Border { Width = 13, Height = 13, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1.2),
+                                   VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 3, 10, 0) };
+            box.BorderBrush = SecondaryAt(0.6);
+            DockPanel.SetDock(box, Dock.Left);
+            row.Children.Add(box);
+            if (task.Owner is { } owner)
+            {
+                var chip = OwnerChip(owner);
+                chip.VerticalAlignment = VerticalAlignment.Top;
+                chip.Margin = new Thickness(0, 0, 10, 0);
+                DockPanel.SetDock(chip, Dock.Left);
+                row.Children.Add(chip);
+            }
+            row.Children.Add(Text(Plain(task.Text), 14, wrap: true));
+            tasks.Children.Add(row);
+        }
+        var tasksBlock = Block("Tarefas", "", summary.Tasks.Count == 0, tasks);
+        tasksBlock.Margin = new Thickness(0, 0, 0, 14);
+        stack.Children.Add(tasksBlock);
+
+        var pair = new Grid();
+        pair.ColumnDefinitions.Add(new ColumnDefinition());
+        pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        pair.ColumnDefinitions.Add(new ColumnDefinition());
+        var decisions = Block("Decisões", "", summary.Decisions.Count == 0, Bullets(summary.Decisions));
+        var open = Block("Pontos em aberto", "", summary.Open.Count == 0, Bullets(summary.Open));
+        Grid.SetColumn(open, 2);
+        pair.Children.Add(decisions);
+        pair.Children.Add(open);
+        stack.Children.Add(pair);
+        return stack;
+    }
+
+    private UIElement Bullets(IEnumerable<string> items)
+    {
+        var stack = new StackPanel();
+        foreach (var item in items)
+        {
+            var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 8) };
+            var dash = Text("–", 14, fg: "BrandAccent");
+            dash.Margin = new Thickness(0, 0, 8, 0);
+            DockPanel.SetDock(dash, Dock.Left);
+            row.Children.Add(dash);
+            row.Children.Add(Text(Plain(item), 14, wrap: true));
+            stack.Children.Add(row);
+        }
+        return stack;
+    }
+
+    private Border Block(string title, string icon, bool empty, UIElement content)
+    {
+        var stack = new StackPanel();
+        var label = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+        var glyph = Glyph(icon, 11, "BrandAccent");
+        glyph.VerticalAlignment = VerticalAlignment.Center;
+        glyph.Margin = new Thickness(0, 0, 6, 0);
+        label.Children.Add(glyph);
+        label.Children.Add(Text(title.ToUpperInvariant(), 10, FontWeights.Medium, "BrandAccent", "MonoFont"));
+        stack.Children.Add(label);
+        stack.Children.Add(empty ? Text("Nenhuma", 14, fg: "BrandSecondary") : content);
+        return Card(stack, new Thickness(16));
+    }
+
+    private Border OwnerChip(string owner)
+    {
+        bool you = owner.StartsWith("você", StringComparison.OrdinalIgnoreCase) || owner.StartsWith("voce", StringComparison.OrdinalIgnoreCase);
+        var label = Text(owner, 11, FontWeights.SemiBold, you ? "BrandOnAccent" : "BrandText");
+        var chip = new Border { Padding = new Thickness(7, 2, 7, 2), CornerRadius = new CornerRadius(4), Child = label };
+        chip.SetResourceReference(Border.BackgroundProperty, you ? "BrandAccentSurface" : "BrandHover");
+        return chip;
+    }
+
+    /// Bold and italic markers out: the blocks are plain text.
+    private static string Plain(string text) => text.Replace("**", "").Replace("__", "");
+
+    // MARK: - Transcript
+
+    private UIElement TranscriptContent(Meeting meeting)
+    {
+        if (meeting.Segments.Count > 0) return Conversation(meeting.Segments);
+        if (meeting.Status == Meeting.Transcribing)
+        {
+            var stack = new StackPanel();
+            stack.Children.Add(ProgressLine(meeting));
+            stack.Children.Add(TranscriptSkeleton());
+            return stack;
+        }
+        return Text("Nenhuma fala foi captada.", 14, fg: "BrandSecondary");
+    }
+
+    /// What you said on the right, the others on the left; name and time when the speaker changes.
+    private UIElement Conversation(List<MeetingSegment> segments)
+    {
+        var stack = new StackPanel();
+        for (int i = 0; i < segments.Count; i++)
+        {
+            var segment = segments[i];
+            bool mine = segment.Source != "them";
+            bool first = i == 0 || segments[i - 1].Source != segment.Source;
+            var align = mine ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            var item = new StackPanel { HorizontalAlignment = align, MaxWidth = 560, Margin = new Thickness(0, 0, 0, 6) };
+            if (first)
+            {
+                var who = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = align,
+                                           Margin = new Thickness(0, i == 0 ? 0 : 10, 0, 4) };
+                who.Children.Add(Text(mine ? "Você" : "Eles", 12, FontWeights.SemiBold, mine ? "BrandAccent" : "BrandText"));
+                var time = Text(Meeting.Clock(segment.Start), 10, fg: "BrandSecondary", font: "MonoFont");
+                time.VerticalAlignment = VerticalAlignment.Center;
+                time.Margin = new Thickness(6, 0, 0, 0);
+                who.Children.Add(time);
+                item.Children.Add(who);
+            }
+            var text = new TextBox
+            {
+                Text = segment.Text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent, Padding = new Thickness(0), FontSize = 14, ToolTip = Meeting.Clock(segment.Start),
+            };
+            text.SetResourceReference(Control.ForegroundProperty, "BrandText");
+            text.SetResourceReference(Control.FontFamilyProperty, "BodyFont");
+            var bubble = new Border { Padding = new Thickness(12, 8, 12, 8), CornerRadius = new CornerRadius(4), Child = text,
+                                      HorizontalAlignment = align, BorderThickness = new Thickness(mine ? 0 : 1) };
+            bubble.SetResourceReference(Border.BackgroundProperty, mine ? "BrandAccentTint" : "BrandCard");
+            bubble.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+            item.Children.Add(bubble);
+            stack.Children.Add(item);
+        }
+        return stack;
+    }
+
+    // MARK: - Loading
+
+    private static string ProgressLabel(Meeting meeting) => meeting.Status == Meeting.Transcribing
+        ? $"Transcrevendo o que cada um disse… {(int)Math.Round(meeting.Progress * 100)}%"
+        : "Escrevendo o resumo…";
+
+    private UIElement ProgressLine(Meeting meeting)
+    {
+        var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var spinner = Glyph("", 13, "BrandAccent");
+        spinner.VerticalAlignment = VerticalAlignment.Center;
+        spinner.Margin = new Thickness(0, 0, 8, 0);
+        spinner.RenderTransformOrigin = new Point(0.5, 0.5);
+        var turn = new RotateTransform();
+        spinner.RenderTransform = turn;
+        if (Animate) turn.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(0, 360, TimeSpan.FromSeconds(1.2)) { RepeatBehavior = RepeatBehavior.Forever });
+        row.Children.Add(spinner);
+        progressText = Text(ProgressLabel(meeting), 13, FontWeights.Medium);
+        row.Children.Add(progressText);
+        stack.Children.Add(row);
+        if (meeting.Status == Meeting.Transcribing)
+        {
+            progressBar = ThinProgress(meeting.Progress);
+            progressBar.Margin = new Thickness(0, 8, 0, 0);
+            stack.Children.Add(progressBar);
+        }
+        return stack;
+    }
+
+    private UIElement SummarySkeleton()
+    {
+        var stack = new StackPanel();
+        var overview = new StackPanel();
+        overview.Children.Add(Skeleton(null, 12, new Thickness(0, 0, 0, 10)));
+        overview.Children.Add(Skeleton(null, 12, new Thickness(0, 0, 0, 10)));
+        overview.Children.Add(Skeleton(320, 12));
+        var overviewCard = Card(overview, new Thickness(18));
+        overviewCard.Margin = new Thickness(0, 0, 0, 14);
+        stack.Children.Add(overviewCard);
+
+        var tasks = new StackPanel();
+        tasks.Children.Add(Skeleton(90, 10, new Thickness(0, 0, 0, 12)));
+        foreach (var width in new double[] { 260, 210, 300 })
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+            row.Children.Add(Skeleton(13, 13, new Thickness(0, 0, 10, 0)));
+            row.Children.Add(Skeleton(60, 16, new Thickness(0, 0, 10, 0)));
+            row.Children.Add(Skeleton(width, 12));
+            tasks.Children.Add(row);
+        }
+        var tasksCard = Card(tasks, new Thickness(16));
+        tasksCard.Margin = new Thickness(0, 0, 0, 14);
+        stack.Children.Add(tasksCard);
+
+        var pair = new Grid();
+        pair.ColumnDefinitions.Add(new ColumnDefinition());
+        pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        pair.ColumnDefinitions.Add(new ColumnDefinition());
+        for (int column = 0; column < 2; column++)
+        {
+            var block = new StackPanel();
+            block.Children.Add(Skeleton(110, 10, new Thickness(0, 0, 0, 10)));
+            block.Children.Add(Skeleton(null, 12, new Thickness(0, 0, 0, 10)));
+            block.Children.Add(Skeleton(180, 12));
+            var card = Card(block, new Thickness(16));
+            Grid.SetColumn(card, column * 2);
+            pair.Children.Add(card);
+        }
+        stack.Children.Add(pair);
+        return stack;
+    }
+
+    private UIElement TranscriptSkeleton()
+    {
+        var stack = new StackPanel();
+        double[] widths = { 340, 260, 300, 220, 360 };
+        for (int i = 0; i < widths.Length; i++)
+        {
+            var align = i % 2 == 1 ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            var item = new StackPanel { HorizontalAlignment = align, Margin = new Thickness(0, 0, 0, 14) };
+            var name = Skeleton(70, 10, new Thickness(0, 0, 0, 6));
+            name.HorizontalAlignment = align;
+            item.Children.Add(name);
+            item.Children.Add(Skeleton(widths[i], 34));
+            stack.Children.Add(item);
+        }
+        return stack;
+    }
+
+    /// A placeholder bar that breathes (Secondary at 0.10 ↔ 0.22) while content is being made.
+    private FrameworkElement Skeleton(double? width, double height, Thickness margin = default)
+    {
+        var bar = new Border { Height = height, CornerRadius = new CornerRadius(4), Margin = margin, HorizontalAlignment = HorizontalAlignment.Left };
+        if (width is { } w) bar.Width = w; else bar.HorizontalAlignment = HorizontalAlignment.Stretch;
+        var color = ((SolidColorBrush)FindResource("BrandSecondary")).Color;
+        var brush = new SolidColorBrush(Color.FromArgb((byte)(0.22 * 255), color.R, color.G, color.B));
+        bar.Background = brush;
+        if (Animate)
+        {
+            brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(
+                Color.FromArgb((byte)(0.10 * 255), color.R, color.G, color.B), TimeSpan.FromSeconds(0.9))
+            { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } });
+        }
+        return bar;
+    }
+
+    // MARK: - Pieces
+
+    private TextBlock Text(string text, double size = 14, FontWeight? weight = null, string fg = "BrandText", string font = "BodyFont", bool wrap = false)
+    {
+        var block = new TextBlock { Text = text, FontSize = size, FontWeight = weight ?? FontWeights.Normal,
+                                    TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap };
+        block.SetResourceReference(TextBlock.ForegroundProperty, fg);
+        block.SetResourceReference(TextBlock.FontFamilyProperty, font);
+        return block;
+    }
+
+    private TextBlock Glyph(string glyph, double size, string fg)
+    {
+        var block = new TextBlock { Text = glyph, FontSize = size, FontFamily = new FontFamily(Icons) };
+        block.SetResourceReference(TextBlock.ForegroundProperty, fg);
+        return block;
+    }
+
+    private UIElement Meta(string icon, string text)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 16, 4) };
+        var glyph = Glyph(icon, 12, "BrandSecondary");
+        glyph.VerticalAlignment = VerticalAlignment.Center;
+        glyph.Margin = new Thickness(0, 0, 6, 0);
+        row.Children.Add(glyph);
+        row.Children.Add(Text(text, 12, fg: "BrandSecondary"));
+        return row;
+    }
+
+    private UIElement Notice(string icon, string text)
+    {
+        var row = new DockPanel { LastChildFill = true };
+        var glyph = Glyph(icon, 13, "BrandAccent");
+        glyph.Margin = new Thickness(0, 2, 10, 0);
+        glyph.VerticalAlignment = VerticalAlignment.Top;
+        DockPanel.SetDock(glyph, Dock.Left);
+        row.Children.Add(glyph);
+        row.Children.Add(Text(text, 13, wrap: true));
+        var border = new Border { Padding = new Thickness(12), CornerRadius = new CornerRadius(4), Margin = new Thickness(0, 0, 0, 16), Child = row };
+        border.SetResourceReference(Border.BackgroundProperty, "BrandAccentTint");
+        return border;
+    }
+
+    private Border Card(UIElement child, Thickness? padding = null)
+    {
+        var card = new Border { Padding = padding ?? new Thickness(16), CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), Child = child };
+        card.SetResourceReference(Border.BackgroundProperty, "BrandCard");
+        card.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+        return card;
+    }
+
+    private ProgressBar ThinProgress(double value)
+    {
+        var bar = new ProgressBar { Minimum = 0, Maximum = 1, Value = value, Height = 3, BorderThickness = new Thickness(0) };
+        bar.SetResourceReference(Control.ForegroundProperty, "BrandAccent");
+        bar.SetResourceReference(Control.BackgroundProperty, "BrandHover");
+        return bar;
+    }
+
+    private Brush AccentAt(double opacity)
+    {
+        var color = ((SolidColorBrush)FindResource("BrandAccent")).Color;
+        return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
+    }
+
+    private Brush SecondaryAt(double opacity)
+    {
+        var color = ((SolidColorBrush)FindResource("BrandSecondary")).Color;
+        return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
+    }
+
+    /// A dot with a ring that grows and fades, like a recording light.
+    private FrameworkElement PulsingDot(double size)
+    {
+        var grid = new Grid { Width = size * 2, Height = size * 2 };
+        var ring = new Ellipse { Width = size * 2, Height = size * 2, Fill = AccentAt(0.25), RenderTransformOrigin = new Point(0.5, 0.5) };
+        var scale = new ScaleTransform(0.4, 0.4);
+        ring.RenderTransform = scale;
+        var dot = new Ellipse { Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        dot.SetResourceReference(Shape.FillProperty, "BrandAccent");
+        grid.Children.Add(ring);
+        grid.Children.Add(dot);
+        if (Animate)
+        {
+            var grow = new DoubleAnimation(0.4, 1, TimeSpan.FromSeconds(1.2)) { RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } };
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+            ring.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromSeconds(1.2)) { RepeatBehavior = RepeatBehavior.Forever });
+        }
+        else
+        {
+            ring.Visibility = Visibility.Collapsed;
+        }
+        return grid;
+    }
+
+    private Border PrimaryButton(string? icon, string label, Action action)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        if (icon != null)
+        {
+            var glyph = Glyph(icon, 12, "BrandOnAccent");
+            glyph.VerticalAlignment = VerticalAlignment.Center;
+            glyph.Margin = new Thickness(0, 0, 8, 0);
+            row.Children.Add(glyph);
+        }
+        row.Children.Add(Text(label, 13, FontWeights.SemiBold, "BrandOnAccent"));
+        var button = new Border { Padding = new Thickness(14, 7, 14, 7), CornerRadius = new CornerRadius(4), Child = row, Cursor = Cursors.Hand };
+        button.SetResourceReference(Border.BackgroundProperty, "BrandAccentSurface");
+        button.MouseEnter += (_, _) => button.Opacity = 0.9;
+        button.MouseLeave += (_, _) => button.Opacity = 1;
+        button.MouseLeftButtonUp += (_, _) => action();
+        AutomationLabel(button, label);
+        return button;
+    }
+
+    private Border SecondaryButton(string label, Action action)
+    {
+        var button = new Border { Padding = new Thickness(12, 6, 12, 6), CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1),
+                                  Child = Text(label, 13, FontWeights.Medium), Cursor = Cursors.Hand };
+        button.SetResourceReference(Border.BackgroundProperty, "BrandCard");
+        button.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+        button.MouseLeftButtonUp += (_, _) => action();
+        AutomationLabel(button, label);
+        return button;
+    }
+
+    private Border IconButton(string glyph, string help, bool enabled, Action action)
+    {
+        var icon = Glyph(glyph, 13, enabled ? "BrandText" : "BrandTertiary");
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        var button = new Border { Width = 32, Height = 30, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1),
+                                  Margin = new Thickness(6, 0, 0, 0), Child = icon, ToolTip = help, Opacity = enabled ? 1 : 0.5,
+                                  Cursor = enabled ? Cursors.Hand : Cursors.Arrow };
+        button.SetResourceReference(Border.BackgroundProperty, "BrandCard");
+        button.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+        if (enabled)
+        {
+            button.MouseEnter += (_, _) => button.SetResourceReference(Border.BackgroundProperty, "BrandHover");
+            button.MouseLeave += (_, _) => button.SetResourceReference(Border.BackgroundProperty, "BrandCard");
+            button.MouseLeftButtonUp += (_, _) => action();
+        }
+        AutomationLabel(button, help);
+        return button;
+    }
+
+    /// A copy button that confirms with a check for 1.4 s.
+    private Border CopyButton(string glyph, string help, Func<string?> text, bool enabled)
+    {
+        Border? button = null;
+        button = IconButton(glyph, help, enabled, () =>
+        {
+            var value = text();
+            if (string.IsNullOrWhiteSpace(value)) return;
+            try { Clipboard.SetText(value); } catch (Exception e) { Log.Write("Copy meeting: " + e.Message); return; }
+            if (button?.Child is TextBlock icon)
+            {
+                icon.Text = "";
+                button.ToolTip = "Copiado";
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.4) };
+                timer.Tick += (_, _) =>
                 {
-                    Text = line.Replace("**", ""), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4),
-                });
+                    timer.Stop();
+                    icon.Text = glyph;
+                    button.ToolTip = help;
+                };
+                timer.Start();
+            }
+        });
+        return button;
+    }
+
+    private static void AutomationLabel(UIElement element, string name) =>
+        System.Windows.Automation.AutomationProperties.SetName(element, name);
+
+    private static void Move(TranslateTransform transform, double x)
+    {
+        if (!Animate)
+        {
+            transform.X = x;
+            return;
+        }
+        transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(x, TimeSpan.FromMilliseconds(150)));
+    }
+
+    /// Fade in while moving from (x, y) to its place, in 300 ms.
+    private static void SlideIn(UIElement element, double x, double y)
+    {
+        if (!Animate) return;
+        var move = new TranslateTransform(x, y);
+        element.RenderTransform = move;
+        element.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300)));
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        if (x != 0) move.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(x, 0, TimeSpan.FromMilliseconds(300)) { EasingFunction = ease });
+        if (y != 0) move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(y, 0, TimeSpan.FromMilliseconds(300)) { EasingFunction = ease });
+    }
+}
+
+/// The summary's four sections, read from the Markdown the model fills in (same rules as MeetingSummary in Swift).
+public sealed class MeetingSummary
+{
+    public sealed record Task(string? Owner, string Text);
+
+    public List<string> Overview { get; } = new();
+    public List<string> Decisions { get; } = new();
+    public List<Task> Tasks { get; } = new();
+    public List<string> Open { get; } = new();
+
+    public bool IsEmpty => Overview.Count == 0 && Decisions.Count == 0 && Tasks.Count == 0 && Open.Count == 0;
+
+    public static MeetingSummary Parse(string markdown)
+    {
+        var summary = new MeetingSummary();
+        string section = "other";
+        foreach (var raw in markdown.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0) continue;
+            if (line.StartsWith('#'))
+            {
+                var title = line.TrimStart('#').ToLowerInvariant();
+                section = title.Contains("resumo") ? "overview"
+                    : title.Contains("decis") ? "decisions"
+                    : title.Contains("tarefa") ? "tasks"
+                    : title.Contains("aberto") ? "open" : "other";
+                continue;
+            }
+            bool item = line.StartsWith("- ") || line.StartsWith("* ");
+            var text = item ? line[2..].Trim() : line;
+            // "Nenhuma." is how the model says the section is empty.
+            if (text.StartsWith("nenhum", StringComparison.OrdinalIgnoreCase) && text.Length < 12) continue;
+            switch (section)
+            {
+                case "decisions": summary.Decisions.Add(text); break;
+                case "open": summary.Open.Add(text); break;
+                case "tasks":
+                    int colon = text.IndexOf(':');
+                    if (colon > 0 && colon <= 16) summary.Tasks.Add(new Task(text[..colon].Trim(), text[(colon + 1)..].Trim()));
+                    else summary.Tasks.Add(new Task(null, text));
+                    break;
+                default: summary.Overview.Add(text); break;
             }
         }
-    }
-
-    private static TextBlock Subtle(string text) => new()
-    {
-        Text = text, TextWrapping = TextWrapping.Wrap, Style = (Style)Application.Current.FindResource("Subtle"),
-    };
-
-    // MARK: - Actions
-
-    private void Record_Click(object sender, RoutedEventArgs e) => model.ToggleMeeting?.Invoke();
-
-    private void CopySummary_Click(object sender, RoutedEventArgs e) => Copy(selected?.Summary);
-
-    private void CopyTranscript_Click(object sender, RoutedEventArgs e) => Copy(selected?.TranscriptText());
-
-    private static void Copy(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        try { Clipboard.SetText(text); } catch (Exception e) { Log.Write("Copy meeting: " + e.Message); }
-    }
-
-    private void Resummarize_Click(object sender, RoutedEventArgs e)
-    {
-        if (selected != null) model.ResummarizeMeeting?.Invoke(selected);
-    }
-
-    private void Delete_Click(object sender, RoutedEventArgs e) => DeleteConfirm.Visibility = Visibility.Visible;
-
-    private void CancelDelete_Click(object sender, RoutedEventArgs e) => DeleteConfirm.Visibility = Visibility.Collapsed;
-
-    private void ConfirmDelete_Click(object sender, RoutedEventArgs e)
-    {
-        DeleteConfirm.Visibility = Visibility.Collapsed;
-        if (selected is { } meeting) model.DeleteMeeting(meeting);
-        if (model.Meetings.Count > 0) MeetingList.SelectedIndex = 0;
+        return summary;
     }
 }
