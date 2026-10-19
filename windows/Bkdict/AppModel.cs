@@ -253,19 +253,19 @@ public sealed class AppModel : ObservableObject
         set { settings.OllamaBaseUrl = value; Save(); }
     }
 
-    /// Starts Bkdict when the user signs in to Windows.
+    /// Starts BKDict when the user signs in to Windows.
     public bool LaunchAtStartup
     {
         get
         {
             using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-            return key?.GetValue("Bkdict") != null;
+            return key?.GetValue("BKDict") != null;
         }
         set
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-            if (value) key.SetValue("Bkdict", $"\"{Environment.ProcessPath}\"");
-            else key.DeleteValue("Bkdict", throwOnMissingValue: false);
+            if (value) key.SetValue("BKDict", $"\"{Environment.ProcessPath}\"");
+            else key.DeleteValue("BKDict", throwOnMissingValue: false);
             OnPropertyChanged();
         }
     }

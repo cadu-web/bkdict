@@ -1,4 +1,4 @@
-# Builds Bkdict for Windows into windows\dist. Pass -Install to install it for the current user
+# Builds BKDict for Windows into windows\dist. Pass -Install to install it for the current user
 # (%LOCALAPPDATA%\Programs\Bkdict, with a Start menu shortcut) and launch it.
 param([switch]$Install)
 $ErrorActionPreference = 'Stop'
@@ -55,7 +55,10 @@ if ($Install) {
     Copy-Item $dist $target -Recurse
 
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'Bkdict.lnk'))
+    $link = Join-Path ([Environment]::GetFolderPath('Programs')) 'BKDict.lnk'
+    # Saving over the old Bkdict.lnk would keep its old spelling, so it goes first.
+    Remove-Item $link -ErrorAction SilentlyContinue
+    $shortcut = $shell.CreateShortcut($link)
     $shortcut.TargetPath = Join-Path $target 'Bkdict.exe'
     $shortcut.WorkingDirectory = $target
     $shortcut.Save()

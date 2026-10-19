@@ -47,7 +47,7 @@ final class AppModel: ObservableObject {
     @Published var detectMeetings = Settings.detectMeetings {
         didSet { Settings.detectMeetings = detectMeetings }
     }
-    /// Starts Bkdict when the user logs in to the Mac. The system keeps this, not UserDefaults.
+    /// Starts BKDict when the user logs in to the Mac. The system keeps this, not UserDefaults.
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled {
         didSet {
             let service = SMAppService.mainApp

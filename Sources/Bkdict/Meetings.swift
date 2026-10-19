@@ -19,7 +19,7 @@ struct Meeting: Codable, Identifiable, Hashable {
     var title: String
     let startedAt: Date
     var duration: TimeInterval = 0
-    /// The call app it was recorded from, when the Bkdict noticed the call (phase 2).
+    /// The call app it was recorded from, when the BKDict noticed the call (phase 2).
     var app: String?
     var systemAudio = true
     var status = Status.recording
@@ -133,7 +133,7 @@ final class MeetingCenter: ObservableObject {
                     system = recorder
                 } catch {
                     meeting.systemAudio = false
-                    NSLog("Bkdict: \(error.localizedDescription)")
+                    NSLog("BKDict: \(error.localizedDescription)")
                 }
             } else {
                 meeting.systemAudio = false
@@ -337,7 +337,7 @@ final class MeetingCenter: ObservableObject {
                 meeting.segments = segments
                 meeting.speakers = Array(repeating: "", count: voices)
             } catch {
-                NSLog("Bkdict: separador de vozes: \(error.localizedDescription)")
+                NSLog("BKDict: separador de vozes: \(error.localizedDescription)")
             }
         }
         meeting.status = .summarizing

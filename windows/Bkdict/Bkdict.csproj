@@ -9,7 +9,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Bkdict</AssemblyName>
     <Company>BKDG</Company>
-    <Product>Bkdict</Product>
+    <Product>BKDict</Product>
     <Copyright>© 2026 BKDG. Todos os direitos reservados.</Copyright>
     <RootNamespace>Bkdict</RootNamespace>
     <Version>0.1.0</Version>

@@ -19,7 +19,7 @@ public static class Updater
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, LatestRelease);
-            request.Headers.UserAgent.ParseAdd("Bkdict");
+            request.Headers.UserAgent.ParseAdd("BKDict");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
             using var deadline = Http.Deadline(10);
             using var response = await Http.Client.SendAsync(request, deadline.Token);

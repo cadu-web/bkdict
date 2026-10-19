@@ -90,7 +90,7 @@ public partial class OverlayWindow : Window
         /// The dot before the subtitle, if any.
         public Color? Dot { get; init; }
         public string? CompactSubtitle { get; init; }
-        /// The primary button carries the Bkdict symbol.
+        /// The primary button carries the BKDict symbol.
         public bool ActionShowsSymbol { get; init; }
         /// A quiet text button before the primary one.
         public string? SecondaryLabel { get; init; }
@@ -798,7 +798,7 @@ public partial class OverlayWindow : Window
         return row;
     }
 
-    /// The card's main button: Osso with Tinta text, 34 tall, 8 pt corners, optionally with the Bkdict symbol.
+    /// The card's main button: Osso with Tinta text, 34 tall, 8 pt corners, optionally with the BKDict symbol.
     private Border PrimaryButton(string text, bool withSymbol, Action action)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -924,7 +924,7 @@ public partial class OverlayWindow : Window
 
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Esconder por 1 hora", () => HideFor(TimeSpan.FromHours(1))));
-        menu.Items.Add(Item("Abrir o Bkdict", () => OnOpenApp()));
+        menu.Items.Add(Item("Abrir o BKDict", () => OnOpenApp()));
         return menu;
     }
 

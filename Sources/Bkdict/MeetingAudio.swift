@@ -103,7 +103,7 @@ final class WavFileWriter {
 }
 
 /// Records what the Mac plays (the other people in a call) through a Core Audio process tap, excluding the
-/// Bkdict itself, converted to 16 kHz mono. macOS 14.2+; the first start asks for "System Audio Recording".
+/// BKDict itself, converted to 16 kHz mono. macOS 14.2+; the first start asks for "System Audio Recording".
 @available(macOS 14.2, *)
 final class SystemAudioRecorder {
     enum Failure: LocalizedError {
@@ -146,7 +146,7 @@ final class SystemAudioRecorder {
 
         let output = try Self.defaultOutputUID()
         let aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Bkdict reunião",
+            kAudioAggregateDeviceNameKey: "BKDict reunião",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: output,
             kAudioAggregateDeviceIsPrivateKey: true,
@@ -204,7 +204,7 @@ final class SystemAudioRecorder {
         guard status == noErr else { throw Failure.coreAudio(step, status) }
     }
 
-    /// The Bkdict's own audio process, so its sounds (the dictation pops) stay out of the recording.
+    /// The BKDict's own audio process, so its sounds (the dictation pops) stay out of the recording.
     private static func ownProcessObjects() -> [AudioObjectID] {
         var pid = ProcessInfo.processInfo.processIdentifier
         var object = AudioObjectID(kAudioObjectUnknown)

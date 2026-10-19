@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds Bkdict.app into ./dist. Pass --install to copy it to /Applications,
+# Builds BKDict.app into ./dist. Pass --install to copy it to /Applications,
 # or --release to build for Intel + Apple Silicon and package it as .zip and .dmg.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 ARCHS=()
 [[ "${1:-}" == "--release" ]] && ARCHS=(--arch arm64 --arch x86_64)
 swift build -c release ${ARCHS[@]+"${ARCHS[@]}"}
-APP=dist/Bkdict.app
+APP=dist/BKDict.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/Bkdict" "$APP/Contents/MacOS/Bkdict"
@@ -35,14 +35,14 @@ codesign --force --sign - -r='designated => identifier "co.bkdg.bkdict"' "$APP"
 echo "Built $APP"
 
 if [[ "${1:-}" == "--install" ]]; then
-    rm -rf /Applications/Bkdict.app
+    rm -rf /Applications/BKDict.app
     cp -R "$APP" /Applications/
-    echo "Installed /Applications/Bkdict.app"
+    echo "Installed /Applications/BKDict.app"
 fi
 
 if [[ "${1:-}" == "--release" ]]; then
     VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
-    ZIP="dist/Bkdict-$VERSION.zip"
+    ZIP="dist/BKDict-$VERSION.zip"
     rm -f "$ZIP"
     ditto -c -k --keepParent "$APP" "$ZIP"
     echo "Packaged $ZIP"
@@ -50,18 +50,18 @@ if [[ "${1:-}" == "--release" ]]; then
     # Drag-to-Applications disk image. create-dmg drives Finder via AppleScript,
     # so it needs a logged-in session (not a headless CI runner).
     command -v create-dmg >/dev/null || { echo "create-dmg not found: brew install create-dmg" >&2; exit 1; }
-    DMG="dist/Bkdict-$VERSION.dmg"
+    DMG="dist/BKDict-$VERSION.dmg"
     STAGE="$(mktemp -d)"
     cp -R "$APP" "$STAGE/"
     rm -f "$DMG"
     create-dmg \
-        --volname "Bkdict" \
+        --volname "BKDict" \
         --volicon "$APP/Contents/Resources/AppIcon.icns" \
         --background Resources/dmg-background.tiff \
         --window-size 660 400 \
         --icon-size 112 \
-        --icon "Bkdict.app" 180 190 \
-        --hide-extension "Bkdict.app" \
+        --icon "BKDict.app" 180 190 \
+        --hide-extension "BKDict.app" \
         --app-drop-link 480 190 \
         "$DMG" "$STAGE" >/dev/null
     rm -rf "$STAGE"

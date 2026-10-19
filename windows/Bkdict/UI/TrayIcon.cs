@@ -19,15 +19,15 @@ public sealed class TrayIcon : IDisposable
         menu = new Forms.ContextMenuStrip();
         menu.Items.Add(statusItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("Abrir Bkdict", null, (_, _) => open());
+        menu.Items.Add("Abrir BKDict", null, (_, _) => open());
         menu.Items.Add("Copiar última transcrição", null, (_, _) => copyLast());
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("Sair do Bkdict", null, (_, _) => quit());
+        menu.Items.Add("Sair do BKDict", null, (_, _) => quit());
 
         icon = new Forms.NotifyIcon
         {
             Icon = LoadIcon(),
-            Text = "Bkdict",
+            Text = "BKDict",
             ContextMenuStrip = menu,
             Visible = true,
         };
@@ -43,12 +43,12 @@ public sealed class TrayIcon : IDisposable
         {
             statusItem.Text = value;
             // NotifyIcon tooltips are limited to 63 characters.
-            var tip = "Bkdict — " + value;
+            var tip = "BKDict — " + value;
             icon.Text = tip.Length > 63 ? tip[..62] + "…" : tip;
         }
     }
 
-    /// Adds "Gravar reunião" under "Abrir Bkdict"; its text follows SetMeetingRecording.
+    /// Adds "Gravar reunião" under "Abrir BKDict"; its text follows SetMeetingRecording.
     public void SetMeetingAction(Action toggle)
     {
         meetingItem = new Forms.ToolStripMenuItem("Gravar reunião", null, (_, _) => toggle());
@@ -66,7 +66,7 @@ public sealed class TrayIcon : IDisposable
         void Open() => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         menu.Items.Insert(2, new Forms.ToolStripMenuItem($"Baixar a versão {version}…", null, (_, _) => Open()));
         icon.BalloonTipClicked += (_, _) => Open();
-        icon.ShowBalloonTip(8000, "Bkdict", $"A versão {version} está disponível. Clique para baixar.", Forms.ToolTipIcon.Info);
+        icon.ShowBalloonTip(8000, "BKDict", $"A versão {version} está disponível. Clique para baixar.", Forms.ToolTipIcon.Info);
     }
 
     private static Icon LoadIcon()

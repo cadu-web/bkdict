@@ -38,7 +38,7 @@ final class OverlayState: ObservableObject {
     @Published var dragging = false
     /// When the meeting being recorded started; the idle bar then shows the time and a stop button.
     @Published var meetingSince: Date?
-    /// A call the Bkdict noticed: an offer to record it, or to stop when it ended.
+    /// A call the BKDict noticed: an offer to record it, or to stop when it ended.
     @Published var offer: MeetingOffer?
     /// The offer arrives compact ("Reunião detectada • agora") and then opens into the card with the button.
     @Published var offerExpanded = true
@@ -361,7 +361,7 @@ private struct BarView: View {
                 }
                 Divider()
                 Button("Esconder por 1 hora", action: state.onHideForAnHour)
-                Button("Abrir o Bkdict", action: state.onOpenApp)
+                Button("Abrir o BKDict", action: state.onOpenApp)
             }
     }
 
@@ -615,7 +615,7 @@ private struct DockGuideView: View {
     }
 }
 
-/// What the bar offers about a call the Bkdict noticed.
+/// What the bar offers about a call the BKDict noticed.
 enum MeetingOffer: Equatable {
     case record(app: String)
     case stop(app: String)

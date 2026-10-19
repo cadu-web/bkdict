@@ -45,7 +45,7 @@ func render(scale: CGFloat) -> NSBitmapImageRep {
         let bounds = string.size()
         string.draw(at: NSPoint(x: (size.width - bounds.width) / 2, y: top(centerY) - bounds.height / 2))
     }
-    draw("Arraste o Bkdict para Aplicativos", font: NSFont(name: "IBMPlexSans", size: 14)!, color: secondary, centerY: 316)
+    draw("Arraste o BKDict para Aplicativos", font: NSFont(name: "IBMPlexSans", size: 14)!, color: secondary, centerY: 316)
     draw("BKDG · DITADO POR VOZ", font: NSFont(name: "IBMPlexMono-Medium", size: 10)!, color: tertiary, kern: 0.8, centerY: 44)
 
     NSGraphicsContext.restoreGraphicsState()

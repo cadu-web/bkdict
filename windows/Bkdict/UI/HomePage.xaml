@@ -83,7 +83,7 @@
     <StackPanel>
         <TextBlock Text="Início" Style="{StaticResource PageTitle}" />
         <TextBlock Style="{StaticResource Subtle}"
-                   Text="Em qualquer app: o Bkdict transcreve, ajusta a pontuação e insere o texto na posição do cursor." />
+                   Text="Em qualquer app: o BKDict transcreve, ajusta a pontuação e insere o texto na posição do cursor." />
 
         <Border Style="{StaticResource Card}" Margin="0,20,0,8" Padding="20,16" BorderThickness="0"
                 Background="{DynamicResource BrandAccentSurface}">

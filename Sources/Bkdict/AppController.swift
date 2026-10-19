@@ -42,9 +42,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         // The mark as a template image, so macOS tints it for the menu bar's appearance.
         let icon = Bundle.main.image(forResource: "MenuBarIcon")
-            ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Bkdict")
+            ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "BKDict")
         icon?.isTemplate = true
-        icon?.accessibilityDescription = "Bkdict"
+        icon?.accessibilityDescription = "BKDict"
         statusItem.button?.image = icon
         buildMenu()
         mainWindow.show()
@@ -124,7 +124,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 return
             }
         }
-        if AXIsProcessTrusted() { setReady() } else { setStatus("Permita o Bkdict em Acessibilidade") }
+        if AXIsProcessTrusted() { setReady() } else { setStatus("Permita o BKDict em Acessibilidade") }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -440,7 +440,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 flashError(Self.message(for: error))
-                NSLog("Bkdict: \(error.localizedDescription)")
+                NSLog("BKDict: \(error.localizedDescription)")
             }
         }
     }
@@ -523,7 +523,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu.addItem(statusLine)
         menu.addItem(.separator())
 
-        let open = NSMenuItem(title: "Abrir Bkdict", action: #selector(openMainWindow), keyEquivalent: "o")
+        let open = NSMenuItem(title: "Abrir BKDict", action: #selector(openMainWindow), keyEquivalent: "o")
         open.target = self
         menu.addItem(open)
 
@@ -540,7 +540,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu.addItem(update)
 
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Sair do Bkdict", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Sair do BKDict", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
     }
 

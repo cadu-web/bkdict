@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/images/icon.png" width="128" alt="Ícone do Bkdict">
+  <img src="docs/images/icon.png" width="128" alt="Ícone do BKDict">
 </p>
 
-<h1 align="center">Bkdict</h1>
+<h1 align="center">BKDict</h1>
 
 <p align="center">
   Ditado por voz para macOS e Windows, da BKDG. Segure uma tecla, fale e solte: o texto é transcrito, ajustado e inserido na posição do cursor, em qualquer app.<br>
@@ -13,7 +13,7 @@
 
 ## O que é
 
-O Bkdict transcreve o que você fala em qualquer app (Slack, email, Notion, navegador, editor de código), remove vícios de fala, corrige a pontuação e cola o resultado onde o cursor estiver. O clipboard é preservado.
+O BKDict transcreve o que você fala em qualquer app (Slack, email, Notion, navegador, editor de código), remove vícios de fala, corrige a pontuação e cola o resultado onde o cursor estiver. O clipboard é preservado.
 
 Você escolhe onde cada parte roda:
 
@@ -67,9 +67,9 @@ Todos podem ser trocados em **Ajustes → Atalhos**. Os atalhos do Windows estã
 
 Requisitos: macOS 14 ou superior (Intel ou Apple Silicon).
 
-1. Abra o `Bkdict-x.y.z.dmg` e arraste o **Bkdict** para **Aplicativos**.
-2. O app é assinado ad-hoc, sem certificado da Apple, então o macOS bloqueia a primeira abertura. Vá em Ajustes do Sistema → Privacidade e Segurança → **Abrir Mesmo Assim**, ou rode `xattr -dr com.apple.quarantine /Applications/Bkdict.app`.
-3. Abra o Bkdict. No primeiro uso, ele instala sozinho o que precisa para rodar neste Mac, sem Terminal nem Homebrew:
+1. Abra o `BKDict-x.y.z.dmg` e arraste o **BKDict** para **Aplicativos**.
+2. O app é assinado ad-hoc, sem certificado da Apple, então o macOS bloqueia a primeira abertura. Vá em Ajustes do Sistema → Privacidade e Segurança → **Abrir Mesmo Assim**, ou rode `xattr -dr com.apple.quarantine /Applications/BKDict.app`.
+3. Abra o BKDict. No primeiro uso, ele instala sozinho o que precisa para rodar neste Mac, sem Terminal nem Homebrew:
    - o **whisper** (transcrição, cerca de 5 MB);
    - o **Ollama** (IA local, cerca de 175 MB).
 
@@ -77,7 +77,7 @@ Requisitos: macOS 14 ou superior (Intel ou Apple Silicon).
 
 ### Primeiro uso
 
-1. Permita o Bkdict em **Microfone** e **Acessibilidade** (Ajustes do Sistema → Privacidade e Segurança).
+1. Permita o BKDict em **Microfone** e **Acessibilidade** (Ajustes do Sistema → Privacidade e Segurança).
 2. Em **Modelos**, escolha e baixe um modelo de transcrição (recomendado: *Large v3 Turbo (comprimido)*) ou cole uma chave de API. Para IA local, baixe também um modelo do Ollama na mesma tela.
 3. Se usar `Fn`: em Ajustes do Sistema → Teclado, deixe "Ao pressionar 🌐" como **Não fazer nada**.
 4. Segure `Fn` e fale.
@@ -128,9 +128,9 @@ Requisitos: Xcode 16+ (Swift 5.10+).
 
 ```sh
 swift build          # compila
-./build.sh           # gera dist/Bkdict.app
+./build.sh           # gera dist/BKDict.app
 ./build.sh --install # copia para /Applications
-./build.sh --release # app universal (Intel + Apple Silicon) em dist/Bkdict-x.y.z.zip e .dmg (requer: brew install create-dmg)
+./build.sh --release # app universal (Intel + Apple Silicon) em dist/BKDict-x.y.z.zip e .dmg (requer: brew install create-dmg)
 ```
 
 O identificador `co.bkdg.bkdict` é fixo para o macOS manter as permissões de Microfone e Acessibilidade entre builds.
@@ -175,6 +175,6 @@ Ao trocar a versão do whisper.cpp, mude `WHISPER_VERSION` no script, publique n
 
 ## Licença
 
-Copyright (c) 2026 BKDG. Todos os direitos reservados. O Bkdict é software proprietário: uso, cópia, modificação e distribuição só com autorização da BKDG. Os termos estão em [`LICENSE`](LICENSE).
+Copyright (c) 2026 BKDG. Todos os direitos reservados. O BKDict é software proprietário: uso, cópia, modificação e distribuição só com autorização da BKDG. Os termos estão em [`LICENSE`](LICENSE).
 
 Avisos de componentes de terceiros também estão no `LICENSE`. As fontes IBM Plex e Zilla Slab são distribuídas sob a SIL Open Font License (`Resources/Fonts/OFL-*.txt`).

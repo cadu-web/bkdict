@@ -1,7 +1,7 @@
 <Window x:Class="Bkdict.UI.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Bkdict"
+        Title="BKDict"
         Width="1020" Height="720" MinWidth="820" MinHeight="560"
         WindowStartupLocation="CenterScreen"
         Icon="pack://application:,,,/Assets/AppIcon.png"
@@ -18,7 +18,7 @@
         <DockPanel Grid.Column="0" Margin="12,12,4,12">
             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,4,8,20">
                 <Image Source="pack://application:,,,/Assets/AppIcon.png" Width="34" Height="34" />
-                <TextBlock Text="Bkdict" FontFamily="{StaticResource DisplayFont}" FontSize="22" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+                <TextBlock Text="BKDict" FontFamily="{StaticResource DisplayFont}" FontSize="22" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
             </StackPanel>
             <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}" Style="{StaticResource Subtle}" FontSize="12" Margin="8" />
             <ListBox x:Name="Nav" BorderThickness="0" Background="Transparent" SelectionChanged="Nav_SelectionChanged">

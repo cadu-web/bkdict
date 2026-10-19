@@ -26,12 +26,12 @@ Duas trilhas, gravadas direto em arquivo enquanto a reunião acontece (uma reuni
 | Trilha | Fonte | Arquivo |
 |---|---|---|
 | Você | microfone escolhido em Ajustes (mesma regra do automático) | `mic.wav` |
-| Eles | áudio do sistema, menos o próprio Bkdict | `system.wav` |
+| Eles | áudio do sistema, menos o próprio BKDict | `system.wav` |
 
 Formato: WAV PCM 16 bits, mono, 16 kHz (o que o Whisper usa). Converter o que vier (48 kHz estéreo float etc.).
 
 - **Mac**: microfone com uma `AVCaptureSession` própria; sistema com **Core Audio process tap**
-  (`CATapDescription` global excluindo o processo do Bkdict + dispositivo agregado privado + IOProc),
+  (`CATapDescription` global excluindo o processo do BKDict + dispositivo agregado privado + IOProc),
   macOS 14.2+. Requer `NSAudioCaptureUsageDescription` no `Info.plist`.
 - **Windows**: microfone com `WaveInEvent` no dispositivo escolhido; sistema com `WasapiLoopbackCapture`
   (NAudio.Wasapi) do dispositivo de saída padrão. Reamostrar para 16 kHz mono.
@@ -95,7 +95,7 @@ transcrição e o resumo diz como configurar.
 
 # Fase 2 — detectar a reunião
 
-O Bkdict percebe que uma chamada começou e oferece gravar; quando ela acaba, oferece parar.
+O BKDict percebe que uma chamada começou e oferece gravar; quando ela acaba, oferece parar.
 
 ## Sinais (verificados a cada 3 s, só com "Detectar reuniões" ligado em Ajustes — padrão: ligado)
 
@@ -115,7 +115,7 @@ Uma chamada está acontecendo quando **um app de reunião está usando o microfo
   `kAudioProcessPropertyIsRunningInput`, `kAudioProcessPropertyBundleID`; macOS 14.2+). Windows — o registro do
   Gerenciador de Acesso a Recursos (`HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\
   ConsentStore\microphone`, chaves `NonPackaged\*` e pacotes; em uso quando `LastUsedTimeStop` é 0).
-  O próprio Bkdict nunca conta.
+  O próprio BKDict nunca conta.
 - **Navegador** só conta se alguma janela dele tiver no título `Meet`, `meet.google.com`, `Microsoft Teams`,
   `Teams`, `Zoom`, `Whereby` ou `Jitsi` (Mac: títulos das janelas pela Acessibilidade; Windows: títulos das janelas
   do processo). O nome mostrado é o do serviço (`Google Meet`, `Microsoft Teams`, `Zoom`…); `Meet` é testado
@@ -242,7 +242,7 @@ uma reunião continua igual).
 1. **Cabeçalho**: título "Reuniões" (Display), botão ⚙ (abre Ajustes) e botão primário **Gravar reunião** (vira
    "Parar e resumir" com o tempo enquanto grava; o banner de gravação da versão anterior continua abaixo do cabeçalho).
 2. **Banner "Gravar sozinho?"** — só enquanto `autoRecordMeetings` está desligado e `autoRecordAsked` é falso: ícone
-   ◎, título **Quer que o Bkdict grave sozinho?**, texto "Começa a gravar assim que a chamada começa e para quando ela
+   ◎, título **Quer que o BKDict grave sozinho?**, texto "Começa a gravar assim que a chamada começa e para quando ela
    acaba.", botões **Agora não** (texto) e **Ativar** (secundário). Os dois marcam `autoRecordAsked`; Ativar liga
    `autoRecordMeetings`.
 3. (O cartão HOJE, com os eventos do calendário, saiu junto com o calendário.)
@@ -308,7 +308,7 @@ tempo esgotado deixam como está.
 - Chega **compacto** (240×40): ícone de câmera em Bordô claro, `Reunião detectada`, `● agora` (ponto verde
   `#7FA88A`). Entra deslizando da borda mais próxima (8 pt, com fade) e, depois de 0,8 s, **se expande** (mola) para
   o cartão 380×64: à esquerda o ícone de câmera num quadrado Bordô a 0,2; `Reunião detectada` (14, médio) e
-  `● Google Meet · agora` (12, Osso a 0,6); à direita o botão **Gravar** com o símbolo do Bkdict (fundo Osso, texto
+  `● Google Meet · agora` (12, Osso a 0,6); à direita o botão **Gravar** com o símbolo do BKDict (fundo Osso, texto
   Tinta, 34 de altura, cantos 8) e ×.
 - Fim da chamada durante a gravação: mesmo cartão com o ícone ■, `A chamada acabou`, `● Google Meet · 12:34
   gravados` e o botão **Parar e resumir**.

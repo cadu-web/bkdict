@@ -21,7 +21,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Bkdict"
+            window.title = "BKDict"
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.minSize = NSSize(width: 820, height: 560)
@@ -120,7 +120,7 @@ private struct Sidebar: View {
                     .padding(6)
                     .frame(width: 30, height: 30)
                     .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.hero))
-                Text("Bkdict")
+                Text("BKDict")
                     .font(Theme.display(21))
                     .foregroundStyle(Theme.text)
             }

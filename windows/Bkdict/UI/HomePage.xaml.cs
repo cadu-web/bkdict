@@ -64,7 +64,7 @@ public partial class HomePage : UserControl
     private void Clear_Click(object sender, RoutedEventArgs e)
     {
         if (model.History.Count == 0) return;
-        var answer = MessageBox.Show(Window.GetWindow(this)!, "Apagar todo o histórico de ditados?", "Bkdict",
+        var answer = MessageBox.Show(Window.GetWindow(this)!, "Apagar todo o histórico de ditados?", "BKDict",
                                      MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer == MessageBoxResult.Yes) model.ClearHistory();
     }

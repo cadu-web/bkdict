@@ -121,7 +121,7 @@ public sealed class MeetingDetector
         return null;
     }
 
-    /// Executable paths (or package names) that hold the microphone now, minus the Bkdict itself.
+    /// Executable paths (or package names) that hold the microphone now, minus the BKDict itself.
     private static IEnumerable<string> AppsOnMicrophone()
     {
         using var store = Registry.CurrentUser.OpenSubKey(ConsentStore);

@@ -1,6 +1,6 @@
-# Bkdict para Windows
+# BKDict para Windows
 
-Versão Windows do Bkdict, da BKDG, em C# / .NET 10 + WPF. Ela tem os mesmos recursos do app de macOS: segure, fale e solte; mãos livres; modo comando; transforms; dicionário e snippets; modelos locais (whisper.cpp e Ollama) ou chave de API. Os arquivos de dados ficam no mesmo formato, exceto o histórico, que no Windows é criptografado para o usuário.
+Versão Windows do BKDict, da BKDG, em C# / .NET 10 + WPF. Ela tem os mesmos recursos do app de macOS: segure, fale e solte; mãos livres; modo comando; transforms; dicionário e snippets; modelos locais (whisper.cpp e Ollama) ou chave de API. Os arquivos de dados ficam no mesmo formato, exceto o histórico, que no Windows é criptografado para o usuário.
 
 Requisitos: Windows 10 ou 11 (x64).
 
@@ -21,7 +21,7 @@ O ícone do `.exe` (`windows\Bkdict\Assets\AppIcon.ico`) é gerado pelo `build.p
 
 ## Primeiro uso
 
-No primeiro uso, o Bkdict instala sozinho o que precisa para rodar neste PC:
+No primeiro uso, o BKDict instala sozinho o que precisa para rodar neste PC:
 
 - o **whisper.cpp** (transcrição), da release oficial do GitHub, conferido por SHA-256, em `%APPDATA%\Bkdict\whisper`;
 - o **Ollama** (IA local), da release oficial mais recente, em `%LOCALAPPDATA%\Bkdict\ollama`. São cerca de 1,5 GB em PCs Intel/AMD (o pacote inclui suporte a placas NVIDIA) e 210 MB em ARM. Fica no `%LOCALAPPDATA%` para não entrar na sincronização do perfil.
@@ -40,12 +40,12 @@ O app inicia o `ollama serve` quando o Ollama é a IA escolhida e o encerra ao s
 Uma barra no pé da tela, no monitor onde está o mouse. Parada, é uma barrinha; com o mouse em cima mostra **Ditar**, o
 atalho e um botão de microfone (dita sem segurar a tecla). Gravando, mostra as ondas, **X** para cancelar e **■** para
 finalizar e colar. Arraste para encaixá-la embaixo, à esquerda ou à direita (nas laterais fica em pé); o clique direito
-tem colar a última transcrição, microfone, posição, esconder por 1 hora e abrir o Bkdict. Pode ser desligada em
+tem colar a última transcrição, microfone, posição, esconder por 1 hora e abrir o BKDict. Pode ser desligada em
 **Ajustes** (aí só aparece durante o ditado). A barra nunca pega o foco, então o texto vai para o app em que você está.
 
 ## Onde o ditado é colado
 
-Antes de colar, o Bkdict pergunta à UI Automation o que está em foco. Num campo de texto, cola. Onde com certeza não há
+Antes de colar, o BKDict pergunta à UI Automation o que está em foco. Num campo de texto, cola. Onde com certeza não há
 campo (botão, lista, área de trabalho ou pasta do Explorer) não cola nem mexe na área de transferência: o ditado fica
 no histórico e a barra mostra "Clique num campo de texto e use {atalho} para colar". Quando não dá para saber (alguns
 navegadores e apps Electron), cola como antes. A área de transferência anterior é restaurada depois de cada colagem.
@@ -55,7 +55,7 @@ navegadores e apps Electron), cola como antes. A área de transferência anterio
 Na tela **Reuniões** (ou pelo menu da bandeja, ou pelo clique direito na barra), **Gravar reunião** grava duas trilhas
 em `%LOCALAPPDATA%\Bkdict\meetings\<data-hora>\`: o microfone (**Você**) e o áudio do PC por WASAPI loopback
 (**Eles**), em 16 kHz mono. Durante a gravação a barra mostra `● tempo ■`, e ditar continua funcionando. Ao parar, o
-Bkdict acha os trechos com fala, transcreve cada um com o motor do ditado, tira o eco de quem está sem fone e gera o
+BKDict acha os trechos com fala, transcreve cada um com o motor do ditado, tira o eco de quem está sem fone e gera o
 resumo (decisões, tarefas, pontos em aberto) com a IA de Modelos. Fechar o app no meio salva o que foi gravado e o
 processamento continua na próxima vez. Detalhes em [`docs/reunioes.md`](../docs/reunioes.md).
 

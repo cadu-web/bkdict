@@ -60,7 +60,7 @@ private struct Hero: View {
                 (Text("Segure ") + Text(model.dictateLabel).italic() + Text(" e fale"))
                     .font(Theme.display(30))
                     .foregroundStyle(Theme.onAccent)
-                Text("Em qualquer app: o Bkdict transcreve, ajusta a pontuação e insere o texto na posição do cursor.")
+                Text("Em qualquer app: o BKDict transcreve, ajusta a pontuação e insere o texto na posição do cursor.")
                     .font(Theme.body(14))
                     .foregroundStyle(Theme.onAccent.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)

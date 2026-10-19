@@ -9,7 +9,7 @@ private struct MicrophoneRow: View {
     @State private var devices = Microphones.inputs
 
     var body: some View {
-        SettingRow(title: "Microfone", detail: "No automático, com fone Bluetooth o Bkdict usa o microfone do Mac, e a música não pausa") {
+        SettingRow(title: "Microfone", detail: "No automático, com fone Bluetooth o BKDict usa o microfone do Mac, e a música não pausa") {
             Picker("", selection: $model.microphone) {
                 Text("Automático").tag(Microphones.automatic)
                 Divider()
@@ -73,7 +73,7 @@ struct SettingsView: View {
                 SettingRow(title: "Ajustar texto com IA", detail: "Remove vícios de fala e corrige a pontuação") {
                     Toggle("", isOn: $model.polishEnabled).labelsHidden().toggleStyle(.switch)
                 }
-                SettingRow(title: "Abrir o Bkdict ao entrar no Mac", divider: false) {
+                SettingRow(title: "Abrir o BKDict ao entrar no Mac", divider: false) {
                     Toggle("", isOn: $model.launchAtLogin).labelsHidden().toggleStyle(.switch)
                         // It can also be turned off in System Settings, so read it again here.
                         .onAppear { model.launchAtLogin = SMAppService.mainApp.status == .enabled }

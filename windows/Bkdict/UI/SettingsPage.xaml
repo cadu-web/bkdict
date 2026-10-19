@@ -23,7 +23,7 @@
                     <ComboBox x:Name="MicrophoneBox" DockPanel.Dock="Right" Width="220" SelectionChanged="Microphone_Changed" />
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Microfone" />
-                        <TextBlock Text="No automático, com fone Bluetooth o Bkdict usa outro microfone, e a música não pausa" Style="{StaticResource Subtle}" FontSize="12" TextWrapping="Wrap" Margin="0,0,12,0" />
+                        <TextBlock Text="No automático, com fone Bluetooth o BKDict usa outro microfone, e a música não pausa" Style="{StaticResource Subtle}" FontSize="12" TextWrapping="Wrap" Margin="0,0,12,0" />
                     </StackPanel>
                 </DockPanel>
                 <DockPanel Margin="0,0,0,12">
@@ -69,7 +69,7 @@
                 </DockPanel>
                 <DockPanel>
                     <CheckBox x:Name="StartupBox" DockPanel.Dock="Right" Click="Startup_Click" />
-                    <TextBlock Text="Abrir o Bkdict ao entrar no Windows" VerticalAlignment="Center" />
+                    <TextBlock Text="Abrir o BKDict ao entrar no Windows" VerticalAlignment="Center" />
                 </DockPanel>
             </StackPanel>
         </Border>
@@ -94,12 +94,12 @@
                     </StackPanel>
                 </DockPanel>
                 <TextBlock Style="{StaticResource Subtle}" FontSize="12" Margin="0,12,0,0"
-                           Text="O Bkdict não consegue colar em apps abertos como administrador, a menos que ele também rode como administrador." />
+                           Text="O BKDict não consegue colar em apps abertos como administrador, a menos que ele também rode como administrador." />
             </StackPanel>
         </Border>
 
         <TextBlock Style="{StaticResource Subtle}" FontSize="12" Margin="0,20,0,0">
-            <Run Text="Arquivos do Bkdict (histórico, modelos, logs): " /><Hyperlink Click="OpenData_Click"><Run x:Name="DataPath" /></Hyperlink>
+            <Run Text="Arquivos do BKDict (histórico, modelos, logs): " /><Hyperlink Click="OpenData_Click"><Run x:Name="DataPath" /></Hyperlink>
         </TextBlock>
     </StackPanel>
 </UserControl>

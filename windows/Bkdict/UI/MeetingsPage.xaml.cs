@@ -201,7 +201,7 @@ public partial class MeetingsPage : UserControl, IOwnScrolling
         return header;
     }
 
-    /// "Quer que o Bkdict grave sozinho?", until answered either way.
+    /// "Quer que o BKDict grave sozinho?", until answered either way.
     private UIElement AutoRecordBanner()
     {
         var row = new DockPanel { LastChildFill = true };
@@ -240,7 +240,7 @@ public partial class MeetingsPage : UserControl, IOwnScrolling
         row.Children.Add(circle);
 
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        texts.Children.Add(Text("Quer que o Bkdict grave sozinho?", 14, FontWeights.SemiBold));
+        texts.Children.Add(Text("Quer que o BKDict grave sozinho?", 14, FontWeights.SemiBold));
         var body = Text("Começa a gravar assim que a chamada começa e para quando ela acaba.", 13, fg: "BrandSecondary", wrap: true);
         body.Margin = new Thickness(0, 2, 0, 0);
         texts.Children.Add(body);
@@ -612,7 +612,7 @@ public partial class MeetingsPage : UserControl, IOwnScrolling
         title.HorizontalAlignment = HorizontalAlignment.Center;
         title.Margin = new Thickness(0, 10, 0, 6);
         stack.Children.Add(title);
-        var body = Text("Comece a gravar quando a chamada começar. Ao parar, o Bkdict separa o que você disse do que os outros disseram e faz o resumo.",
+        var body = Text("Comece a gravar quando a chamada começar. Ao parar, o BKDict separa o que você disse do que os outros disseram e faz o resumo.",
                         14, fg: "BrandSecondary", wrap: true);
         body.TextAlignment = TextAlignment.Center;
         body.MaxWidth = 440;

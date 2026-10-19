@@ -126,7 +126,7 @@ public sealed class HotkeyMonitor : IDisposable
         })
         {
             IsBackground = true,
-            Name = "Bkdict hotkeys",
+            Name = "BKDict hotkeys",
             Priority = ThreadPriority.Highest,
         };
         thread.SetApartmentState(ApartmentState.STA);
@@ -152,7 +152,7 @@ public sealed class HotkeyMonitor : IDisposable
         hookThread = null;
     }
 
-    /// Captures the next shortcut pressed in the Bkdict window; global shortcuts are off meanwhile.
+    /// Captures the next shortcut pressed in the BKDict window; global shortcuts are off meanwhile.
     public bool Record(Action<KeyCombo?> callback)
     {
         Action<KeyCombo?>? previous = null;
@@ -213,7 +213,7 @@ public sealed class HotkeyMonitor : IDisposable
         if (hold == Hold.Consumed && (CurrentMods & consumedFlags) != consumedFlags) hold = Hold.None;
     }
 
-    /// Recording only listens to the Bkdict window: a key pressed in another app ends it, untouched.
+    /// Recording only listens to the BKDict window: a key pressed in another app ends it, untouched.
     private void StopRecordingOutsideApp()
     {
         if (recorder == null) return;

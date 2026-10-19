@@ -93,7 +93,7 @@ public partial class ModelsPage : UserControl
         bool installing = manager.WhisperProgress != null;
         WhisperStatus.Text = manager.WhisperInstalled
             ? "Instalado. A transcrição roda neste PC."
-            : "Necessário para transcrever no PC. O Bkdict instala sozinho no primeiro uso.";
+            : "Necessário para transcrever no PC. O BKDict instala sozinho no primeiro uso.";
         InstallWhisper.Content = installing ? "Instalando…" : manager.WhisperInstalled ? "Reinstalar" : "Instalar whisper.cpp";
         InstallWhisper.IsEnabled = !installing;
         WhisperProgress.Visibility = installing ? Visibility.Visible : Visibility.Collapsed;
@@ -251,7 +251,7 @@ public partial class ModelsPage : UserControl
     private void ModelDelete_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf(sender) is not { } item) return;
-        var answer = MessageBox.Show(Window.GetWindow(this)!, $"Apagar o modelo {item.Name}?", "Bkdict",
+        var answer = MessageBox.Show(Window.GetWindow(this)!, $"Apagar o modelo {item.Name}?", "BKDict",
                                      MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer == MessageBoxResult.Yes) item.Owner.Delete(item);
     }

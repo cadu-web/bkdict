@@ -1,7 +1,7 @@
 <Window x:Class="Bkdict.UI.OverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Bkdict"
+        Title="BKDict"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"

@@ -114,7 +114,7 @@ private struct MeetingHome: View {
                 .frame(width: 40, height: 40)
                 .background(Circle().strokeBorder(Theme.border))
             VStack(alignment: .leading, spacing: 3) {
-                Text("Quer que o Bkdict grave sozinho?")
+                Text("Quer que o BKDict grave sozinho?")
                     .font(Theme.body(14, .semibold))
                     .foregroundStyle(Theme.text)
                 Text("Começa a gravar assim que a chamada começa e para quando ela acaba.")
@@ -510,7 +510,7 @@ private struct MeetingDetail: View {
             if let error = meeting.error {
                 Notice(icon: "exclamationmark.triangle", text: error)
             } else if meeting.status == .ready && !meeting.systemAudio {
-                Notice(icon: "mic", text: "Só o seu microfone foi gravado. Para captar os outros, libere o Bkdict em Ajustes do Sistema → Privacidade e Segurança → Gravação de Áudio do Sistema.")
+                Notice(icon: "mic", text: "Só o seu microfone foi gravado. Para captar os outros, libere o BKDict em Ajustes do Sistema → Privacidade e Segurança → Gravação de Áudio do Sistema.")
             }
 
             if meeting.status == .recording, let since = meetings.recordingSince {

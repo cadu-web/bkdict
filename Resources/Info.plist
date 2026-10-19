@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Bkdict</string>
+    <string>BKDict</string>
     <key>CFBundleDisplayName</key>
-    <string>Bkdict</string>
+    <string>BKDict</string>
     <key>CFBundleIdentifier</key>
     <string>co.bkdg.bkdict</string>
     <key>CFBundleExecutable</key>
@@ -35,10 +35,10 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>O Bkdict grava o áudio do computador durante uma reunião para transcrever o que os outros participantes dizem.</string>
+    <string>O BKDict grava o áudio do computador durante uma reunião para transcrever o que os outros participantes dizem.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>O Bkdict cria lembretes com as tarefas de uma reunião quando você pede.</string>
+    <string>O BKDict cria lembretes com as tarefas de uma reunião quando você pede.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>O Bkdict usa o microfone para transcrever o que você dita.</string>
+    <string>O BKDict usa o microfone para transcrever o que você dita.</string>
 </dict>
 </plist>
