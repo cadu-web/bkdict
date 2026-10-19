@@ -39,6 +39,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppModel.apply(Settings.appearance)
+        NSApp.mainMenu = MainMenu.make()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         // The mark as a template image, so macOS tints it for the menu bar's appearance.
         let icon = Bundle.main.image(forResource: "MenuBarIcon")
