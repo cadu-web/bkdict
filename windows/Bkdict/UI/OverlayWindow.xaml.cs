@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Bkdict.Core;
@@ -20,6 +21,8 @@ public enum OverlayPhase { Hidden, Listening, HandsFree, Command, Transcribing, 
 /// that grows on hover into a "Ditar" button; while dictating it shows the waveform with cancel and finish buttons;
 /// then the progress. It never takes focus (WS_EX_NOACTIVATE), so the paste lands in the app being dictated into.
 /// Dragging it shows the three places it can dock and snaps to the nearest (see DockGuideWindow).
+/// While a meeting is recorded it is a pill that opens the meeting's controls on hover, beside the live transcript
+/// (LivePanelWindow); detected calls and "Começou sem querer?" arrive as cards (docs/reunioes.md).
 public partial class OverlayWindow : Window
 {
     public static class Edges
@@ -42,14 +45,16 @@ public partial class OverlayWindow : Window
 
     // Sizes in DIPs, as on the Mac.
     private static readonly Size Idle = new(44, 8), IdleSide = new(8, 44);
-    private static readonly Size Hovered = new(168, 36), HoveredSide = new(52, 112);
+    private static readonly Size Hovered = new(204, 36), HoveredSide = new(52, 148);
     private static readonly Size Recording = new(300, 40), RecordingSide = new(40, 104);
     private static readonly Size Busy = new(260, 40), BusySide = new(40, 40), TipSize = new(380, 40);
     // While a meeting is recorded and nothing is being dictated (docs/reunioes.md).
     private static readonly Size MeetingPill = new(112, 28), MeetingPillSide = new(32, 84);
-    // A detected call, offered for recording (or for stopping when it ends).
-    // Offers stay lying down on a side too, against that edge: a call offer needs its text to be read.
-    private static readonly Size OfferSize = new(360, 40);
+    // The pill under the mouse: the meeting's controls, never the dictation bar.
+    private static readonly Size MeetingControls = new(220, 36), MeetingControlsSide = new(40, 156);
+    // Cards: a detected call arrives compact and expands. They stay lying down on a side too, against that edge:
+    // their text needs to be read.
+    private static readonly Size CompactSize = new(240, 40), CardSize = new(380, 64);
 
     private readonly DockGuideWindow guide = new();
     private readonly DispatcherTimer screenTimer = new() { Interval = TimeSpan.FromSeconds(0.5) };
@@ -65,11 +70,30 @@ public partial class OverlayWindow : Window
     private TimeSpan? meetingElapsed;
     private readonly List<(TextBlock Block, Func<TimeSpan, string> Format)> meetingClocks = new();
     private string edge = Edges.Bottom;
-    private Offer? offer;
+    private Card? offer;
+    private bool expanded;
     private readonly DispatcherTimer offerTimer = new();
+    private readonly DispatcherTimer expandTimer = new() { Interval = TimeSpan.FromSeconds(0.8) };
+    private DispatcherTimer? resizeTimer;
+    private readonly LivePanelWindow livePanel = new();
+    private bool liveOpen;
+    private static BitmapImage? symbol;
 
-    /// What a detected call offers: its text, the action's label and glyph, and what happens on click or dismissal.
-    private sealed record Offer(string Text, string ActionLabel, string ActionGlyph, Action Run, Action Dismissed);
+    /// A card shown in the bar outside dictation: a detected call, a call that ended, "Começou sem querer?".
+    /// With a compact subtitle it arrives compact (240×40) and expands to the 380×64 card after 0.8 s.
+    public sealed record Card(string Glyph, string Title, string Subtitle, string ActionLabel, Action Run, Action Dismissed)
+    {
+        /// The dot before the subtitle, if any.
+        public Color? Dot { get; init; }
+        public string? CompactSubtitle { get; init; }
+        /// The primary button carries the Bkdict symbol.
+        public bool ActionShowsSymbol { get; init; }
+        /// A quiet text button before the primary one.
+        public string? SecondaryLabel { get; init; }
+        public Action? Secondary { get; init; }
+        /// Shows ×; without it the card only goes away by its buttons or its time.
+        public bool Dismissable { get; init; } = true;
+    }
 
     // Dragging, in physical pixels.
     private Native.POINT? pressPoint;
@@ -120,6 +144,12 @@ public partial class OverlayWindow : Window
             ClearOffer();
             expired?.Dismissed();
         };
+        expandTimer.Tick += (_, _) =>
+        {
+            expandTimer.Stop();
+            if (offer != null && !expanded) Expand();
+        };
+        livePanel.OnClose = () => SetLiveOpen(false);
         Render();
     }
 
@@ -160,8 +190,12 @@ public partial class OverlayWindow : Window
         {
             bool changed = (meetingElapsed == null) != (value == null);
             meetingElapsed = value;
+            livePanel.Elapsed = value ?? TimeSpan.Zero;
             if (changed)
             {
+                // A new recording starts with an empty live transcript; stopping closes it.
+                liveOpen = false;
+                livePanel.Utterances = Array.Empty<LiveUtterance>();
                 Render();
                 Place();
             }
@@ -173,27 +207,104 @@ public partial class OverlayWindow : Window
         }
     }
 
+    /// The meeting's live transcript so far; shown in the panel the ≡ button opens.
+    public IReadOnlyList<LiveUtterance> LiveUtterances
+    {
+        set
+        {
+            livePanel.Utterances = value;
+            if (liveOpen) Place();
+        }
+    }
+
     private bool ShowsMeetingPill => phase == OverlayPhase.Hidden && meetingElapsed != null;
 
     private bool ShowsOffer => phase == OverlayPhase.Hidden && offer != null;
 
-    /// Shows an offer in the bar (outside dictation) until it is used, dismissed or `lifetime` passes.
-    public void ShowOffer(string text, string actionLabel, string actionGlyph, TimeSpan lifetime, Action run, Action dismissed)
+    /// Windows' "Show animations" setting: off, cards appear directly at their final size.
+    private static bool Animates => SystemParameters.ClientAreaAnimation;
+
+    /// Shows a card in the bar (outside dictation) until it is used, dismissed or `lifetime` passes.
+    public void ShowCard(Card card, TimeSpan lifetime)
     {
-        offer = new Offer(text, actionLabel, actionGlyph, run, dismissed);
+        offer = card;
         hovering = false;
+        expanded = card.CompactSubtitle == null || !Animates;
         offerTimer.Stop();
         offerTimer.Interval = lifetime;
         offerTimer.Start();
+        expandTimer.Stop();
+        resizeTimer?.Stop();
         Render();
         Place();
+        if (!Animates || phase != OverlayPhase.Hidden) return;
+        SlideIn();
+        if (!expanded) expandTimer.Start();
     }
 
     public void ClearOffer()
     {
         offerTimer.Stop();
+        expandTimer.Stop();
+        resizeTimer?.Stop();
         if (offer == null) return;
         offer = null;
+        Render();
+        Place();
+    }
+
+    /// Enters 8 pt from the edge it is docked at, fading in.
+    private void SlideIn()
+    {
+        var shift = edge switch { Edges.Left => new Vector(-8, 0), Edges.Right => new Vector(8, 0), _ => new Vector(0, 8) };
+        var move = new TranslateTransform(shift.X, shift.Y);
+        Root.RenderTransform = move;
+        var time = TimeSpan.FromMilliseconds(260);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        move.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(shift.X, 0, time) { EasingFunction = ease });
+        move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(shift.Y, 0, time) { EasingFunction = ease });
+        Root.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
+    }
+
+    /// Grows the compact notice into the card on a damped spring, the card's content fading in as it opens.
+    private void Expand()
+    {
+        expanded = true;
+        Render();
+        if (phase != OverlayPhase.Hidden || dragging || !Animates || Root.Child is not FrameworkElement content)
+        {
+            Place();
+            return;
+        }
+        content.Opacity = 0;
+        content.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)) { BeginTime = TimeSpan.FromMilliseconds(140) });
+        var area = MouseMonitor();
+        var started = DateTime.Now;
+        var duration = TimeSpan.FromMilliseconds(450);
+        resizeTimer?.Stop();
+        var timer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(15) };
+        resizeTimer = timer;
+        timer.Tick += (_, _) =>
+        {
+            double t = Math.Min(1, (DateTime.Now - started).TotalMilliseconds / duration.TotalMilliseconds);
+            double k = t >= 1 ? 1 : 1 - Math.Exp(-8 * t) * Math.Cos(7 * t);
+            var size = new Size(CompactSize.Width + (CardSize.Width - CompactSize.Width) * k,
+                                CompactSize.Height + (CardSize.Height - CompactSize.Height) * k);
+            var rect = Slot(edge, size, area);
+            Native.SetWindowPos(handle, Native.HWND_TOPMOST, (int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height,
+                Native.SWP_NOACTIVATE);
+            if (t < 1) return;
+            timer.Stop();
+            Place();
+        };
+        timer.Start();
+    }
+
+    private void SetLiveOpen(bool open)
+    {
+        if (liveOpen == open) return;
+        liveOpen = open && meetingElapsed != null;
         Render();
         Place();
     }
@@ -242,8 +353,8 @@ public partial class OverlayWindow : Window
     private Size? CurrentSize()
     {
         // Offers and a meeting being recorded always show, even with the idle bar off or snoozed.
-        if (ShowsOffer) return OfferSize;
-        if (ShowsMeetingPill) return Side ? MeetingPillSide : MeetingPill;
+        if (ShowsOffer) return expanded ? CardSize : CompactSize;
+        if (ShowsMeetingPill) return hovering ? (Side ? MeetingControlsSide : MeetingControls) : (Side ? MeetingPillSide : MeetingPill);
         if (phase == OverlayPhase.Hidden)
         {
             bool snoozed = hiddenUntil is { } until && until > DateTime.Now;
@@ -273,12 +384,12 @@ public partial class OverlayWindow : Window
 
         if (ShowsOffer && offer is { } current)
         {
-            Root.Child = OfferContent(current);
-            if (Side) Root.ToolTip = current.Text;
+            Root.Child = expanded ? CardContent(current) : CompactContent(current);
         }
         else if (ShowsMeetingPill)
         {
-            Root.Child = Side ? MeetingSideContent() : MeetingContent();
+            Root.Child = hovering ? (Side ? MeetingControlsSideContent() : MeetingControlsContent())
+                                  : (Side ? MeetingSideContent() : MeetingContent());
         }
         else if (phase == OverlayPhase.Hidden)
         {
@@ -326,35 +437,138 @@ public partial class OverlayWindow : Window
         return column;
     }
 
-    private UIElement OfferContent(Offer current)
+    /// While a meeting is recorded, under the mouse: ● 12:34   [🎤] [≡] [■].
+    private UIElement MeetingControlsContent()
     {
-        var row = new DockPanel { Margin = new Thickness(14, 0, 6, 0), LastChildFill = true };
-        var dismiss = ActionButton("\uE711", Frozen(OssoColor, 0.12), "Dispensar", () => DismissOffer(current));
-        DockPanel.SetDock(dismiss, Dock.Right);
-        row.Children.Add(dismiss);
-        var run = TextButton(current.ActionLabel, () => RunOffer(current));
-        run.Margin = new Thickness(8, 0, 6, 0);
-        DockPanel.SetDock(run, Dock.Right);
-        row.Children.Add(run);
-        // A docked dot and a filling label, so a long app name trims instead of pushing the buttons out.
-        var left = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
-        var dot = RecordingDot();
-        DockPanel.SetDock(dot, Dock.Left);
-        left.Children.Add(dot);
-        var label = Text(current.Text, 13);
-        label.Margin = new Thickness(8, 0, 0, 0);
-        left.Children.Add(label);
+        var row = new DockPanel { Margin = new Thickness(12, 0, 5, 0), LastChildFill = false };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var button in MeetingButtons())
+        {
+            button.Margin = new Thickness(4, 0, 0, 0);
+            buttons.Children.Add(button);
+        }
+        DockPanel.SetDock(buttons, Dock.Right);
+        row.Children.Add(buttons);
+        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(RecordingDot());
+        var clock = Clock(time => Meeting.Clock(time.TotalSeconds), 12);
+        clock.Margin = new Thickness(7, 0, 0, 0);
+        left.Children.Add(clock);
         row.Children.Add(left);
         return row;
     }
 
-    private void RunOffer(Offer current)
+    private UIElement MeetingControlsSideContent()
+    {
+        var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var dot = RecordingDot();
+        dot.HorizontalAlignment = HorizontalAlignment.Center;
+        column.Children.Add(dot);
+        var minutes = Clock(time => ((int)time.TotalMinutes).ToString("00"), 11);
+        minutes.Margin = new Thickness(0, 5, 0, 0);
+        column.Children.Add(minutes);
+        column.Children.Add(Clock(time => time.Seconds.ToString("00"), 11));
+        bool first = true;
+        foreach (var button in MeetingButtons())
+        {
+            button.Margin = new Thickness(0, first ? 8 : 4, 0, 0);
+            first = false;
+            column.Children.Add(button);
+        }
+        return column;
+    }
+
+    /// Dictate (hands-free), show or hide the live transcript, stop and summarize.
+    private IEnumerable<Border> MeetingButtons()
+    {
+        yield return ActionButton("\uE720", Frozen(OssoColor, 0.12), "Ditar sem segurar a tecla", () => OnDictate());
+        yield return ActionButton("\uE8BD", Frozen(OssoColor, liveOpen ? 0.3 : 0.12),
+            liveOpen ? "Esconder a transcrição ao vivo" : "Mostrar a transcrição ao vivo", () => SetLiveOpen(!liveOpen));
+        yield return ActionButton("\uE71A", Accent, "Parar e resumir a reunião", () => OnToggleMeeting());
+    }
+
+    /// The notice as it arrives: icon, title and a short subtitle.
+    private UIElement CompactContent(Card current)
+    {
+        var row = new DockPanel { Margin = new Thickness(13, 0, 13, 0), LastChildFill = false };
+        var when = Subtitle(current.CompactSubtitle ?? "", current.Dot);
+        when.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(when, Dock.Right);
+        row.Children.Add(when);
+        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(Glyph(current.Glyph, Accent, 14));
+        var title = Text(current.Title, 13);
+        title.Margin = new Thickness(9, 0, 0, 0);
+        left.Children.Add(title);
+        row.Children.Add(left);
+        return row;
+    }
+
+    /// The 380×64 card: icon in a Bordô square, title and subtitle, its buttons on the right.
+    private UIElement CardContent(Card current)
+    {
+        var row = new DockPanel { Margin = new Thickness(13, 0, 13, 0), LastChildFill = true };
+        var icon = new Border
+        {
+            Width = 36, Height = 36, CornerRadius = new CornerRadius(6), Background = Frozen(AccentColor, 0.2),
+            VerticalAlignment = VerticalAlignment.Center, Child = Glyph(current.Glyph, Accent, 16),
+        };
+        DockPanel.SetDock(icon, Dock.Left);
+        row.Children.Add(icon);
+        if (current.Dismissable)
+        {
+            var dismiss = ActionButton("\uE711", Frozen(OssoColor, 0.12), "Dispensar", () => DismissOffer(current));
+            dismiss.Margin = new Thickness(6, 0, 0, 0);
+            DockPanel.SetDock(dismiss, Dock.Right);
+            row.Children.Add(dismiss);
+        }
+        var run = PrimaryButton(current.ActionLabel, current.ActionShowsSymbol, () => RunOffer(current));
+        run.Margin = new Thickness(6, 0, 0, 0);
+        DockPanel.SetDock(run, Dock.Right);
+        row.Children.Add(run);
+        if (current.SecondaryLabel is { } label)
+        {
+            var secondary = QuietButton(label, () => RunSecondary(current));
+            DockPanel.SetDock(secondary, Dock.Right);
+            row.Children.Add(secondary);
+        }
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(11, 0, 4, 0) };
+        texts.Children.Add(Text(current.Title, 14));
+        var subtitle = Subtitle(current.Subtitle, current.Dot);
+        subtitle.Margin = new Thickness(0, 2, 0, 0);
+        subtitle.TextWrapping = TextWrapping.Wrap;
+        subtitle.MaxHeight = 32;
+        subtitle.ToolTip = current.Subtitle;
+        texts.Children.Add(subtitle);
+        row.Children.Add(texts);
+        return row;
+    }
+
+    /// 12 pt in Osso at 0.6, after a dot when there is one ("● Google Meet · agora").
+    private static TextBlock Subtitle(string text, Color? dot)
+    {
+        var block = new TextBlock
+        {
+            FontSize = 12, Foreground = Frozen(OssoColor, 0.6), TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        if (dot is { } color) block.Inlines.Add(new System.Windows.Documents.Run("● ") { Foreground = Frozen(color) });
+        block.Inlines.Add(new System.Windows.Documents.Run(text));
+        return block;
+    }
+
+    private void RunSecondary(Card current)
+    {
+        ClearOffer();
+        current.Secondary?.Invoke();
+    }
+
+    private void RunOffer(Card current)
     {
         ClearOffer();
         current.Run();
     }
 
-    private void DismissOffer(Offer current)
+    private void DismissOffer(Card current)
     {
         ClearOffer();
         current.Dismissed();
@@ -381,6 +595,10 @@ public partial class OverlayWindow : Window
     private UIElement IdleContent()
     {
         var row = new DockPanel { Margin = new Thickness(12, 0, 5, 0), LastChildFill = false };
+        var record = RecordMeetingButton();
+        record.Margin = new Thickness(4, 0, 0, 0);
+        DockPanel.SetDock(record, Dock.Right);
+        row.Children.Add(record);
         var mic = ActionButton("", Accent, "Ditar sem segurar a tecla", () => OnDictate());
         DockPanel.SetDock(mic, Dock.Right);
         row.Children.Add(mic);
@@ -401,8 +619,15 @@ public partial class OverlayWindow : Window
         var mic = ActionButton("", Accent, "Ditar sem segurar a tecla", () => OnDictate());
         mic.Margin = new Thickness(0, 6, 0, 0);
         column.Children.Add(mic);
+        var record = RecordMeetingButton();
+        record.Margin = new Thickness(0, 4, 0, 0);
+        column.Children.Add(record);
         return column;
     }
+
+    /// ◎: starts recording a meeting from the open bar.
+    private Border RecordMeetingButton() =>
+        ActionButton("\uE7C8", Frozen(OssoColor, 0.12), "Gravar reunião", () => OnToggleMeeting());
 
     private UIElement RecordingContent()
     {
@@ -503,22 +728,65 @@ public partial class OverlayWindow : Window
         return row;
     }
 
-    /// A primary text button sized for the 40-tall bar, with the same click handling as ActionButton.
-    private Border TextButton(string text, Action action)
+    /// The card's main button: Osso with Tinta text, 34 tall, 8 pt corners, optionally with the Bkdict symbol.
+    private Border PrimaryButton(string text, bool withSymbol, Action action)
+    {
+        var content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        if (withSymbol && Symbol() is { } image)
+        {
+            content.Children.Add(new Image { Source = image, Width = 16, Height = 16, Margin = new Thickness(0, 0, 6, 0) });
+        }
+        content.Children.Add(new TextBlock
+        {
+            Text = text, FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = Frozen(TintaColor),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        var button = new Border
+        {
+            Height = 34, CornerRadius = new CornerRadius(8), Background = Osso, Cursor = Cursors.Hand,
+            Padding = new Thickness(12, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center, Child = content,
+        };
+        System.Windows.Automation.AutomationProperties.SetName(button, text);
+        Clickable(button, action);
+        return button;
+    }
+
+    /// A text-only button (Descartar).
+    private Border QuietButton(string text, Action action)
     {
         var button = new Border
         {
-            Height = 26, CornerRadius = new CornerRadius(6), Background = Accent, Cursor = Cursors.Hand,
+            Height = 34, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand,
             Padding = new Thickness(10, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center,
             Child = new TextBlock
             {
-                Text = text, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = Osso,
+                Text = text, FontSize = 13, FontWeight = FontWeights.Medium, Foreground = Frozen(OssoColor, 0.75),
                 VerticalAlignment = VerticalAlignment.Center,
             },
         };
         System.Windows.Automation.AutomationProperties.SetName(button, text);
         Clickable(button, action);
         return button;
+    }
+
+    private static BitmapImage? Symbol()
+    {
+        if (symbol != null) return symbol;
+        try
+        {
+            symbol = new BitmapImage();
+            symbol.BeginInit();
+            symbol.UriSource = new Uri("pack://application:,,,/Assets/AppIcon.png");
+            symbol.DecodePixelWidth = 48;
+            symbol.EndInit();
+            symbol.Freeze();
+        }
+        catch (Exception e)
+        {
+            Log.Write("Bar symbol: " + e.Message);
+            symbol = null;
+        }
+        return symbol;
     }
 
     /// Clicks on release, unless the press turned into a drag of the bar.
@@ -632,6 +900,7 @@ public partial class OverlayWindow : Window
         if (CurrentSize() is not { } size)
         {
             Hide();
+            livePanel.Hide();
             return;
         }
         var area = MouseMonitor();
@@ -640,6 +909,8 @@ public partial class OverlayWindow : Window
         if (!IsVisible) Show();
         Native.SetWindowPos(handle, Native.HWND_TOPMOST, (int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height,
             Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+        if (liveOpen && meetingElapsed != null) livePanel.PlaceBeside(rect, edge, area.Scale);
+        else livePanel.Hide();
     }
 
     private void HideFor(TimeSpan duration)
@@ -683,6 +954,7 @@ public partial class OverlayWindow : Window
             Native.GetWindowRect(handle, out var window);
             dragOffset = new Native.POINT { x = start.x - window.left, y = start.y - window.top };
             dragging = true;
+            livePanel.Hide();
             Root.CaptureMouse();
         }
         Native.GetWindowRect(handle, out var current);

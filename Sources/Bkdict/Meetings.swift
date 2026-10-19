@@ -80,9 +80,19 @@ final class MeetingCenter: ObservableObject {
     /// Set by AppController: the Dictionary's corrections.
     var correct: (String) -> String = { $0 }
 
+    /// What was said so far in the meeting being recorded (a preview; the final transcript is made at the end).
+    @Published private(set) var live: [Meeting.Segment] = []
+    /// A recording just stopped with almost nothing said: the bar asks whether to keep it.
+    @Published private(set) var suspectedMistake: String?
+
     private var recording: (meeting: Meeting, mic: AudioRecorder, micFile: WavFileWriter,
                             system: AnyObject?, systemFile: WavFileWriter)?
     private var processing: Set<String> = []
+    /// Deleted while processing: nothing about them is saved again.
+    private var discarded: Set<String> = []
+    private var liveBuffers: [(source: Meeting.Segment.Source, buffer: LiveBuffer)] = []
+    private var liveTimer: Timer?
+    private var liveBusy = false
 
     init() {
         load()
@@ -102,15 +112,22 @@ final class MeetingCenter: ObservableObject {
             let micFile = try WavFileWriter(url: meeting.micURL)
             let systemFile = try WavFileWriter(url: meeting.systemURL)
 
+            let micBuffer = LiveBuffer(), systemBuffer = LiveBuffer()
             let mic = AudioRecorder()
             mic.keepsSamples = false
-            mic.onSamples = { micFile.append($0) }
+            mic.onSamples = { samples in
+                micFile.append(samples)
+                micBuffer.append(samples)
+            }
             try mic.start()
 
             var system: AnyObject?
             if #available(macOS 14.2, *) {
                 let recorder = SystemAudioRecorder()
-                recorder.onSamples = { systemFile.append($0) }
+                recorder.onSamples = { samples in
+                    systemFile.append(samples)
+                    systemBuffer.append(samples)
+                }
                 do {
                     try recorder.start()
                     system = recorder
@@ -123,6 +140,12 @@ final class MeetingCenter: ObservableObject {
             }
             recording = (meeting, mic, micFile, system, systemFile)
             recordingSince = now
+            live = []
+            suspectedMistake = nil
+            liveBuffers = [(.me, micBuffer), (.them, systemBuffer)]
+            liveTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
+                Task { await self?.transcribeLive() }
+            }
             save(meeting)
         } catch {
             meeting.status = .failed
@@ -135,6 +158,10 @@ final class MeetingCenter: ObservableObject {
         guard let current = recording else { return }
         recording = nil
         recordingSince = nil
+        liveTimer?.invalidate()
+        liveBuffers = []
+        let words = live.reduce(0) { $0 + $1.text.split(separator: " ").count }
+        if words < 15, Date().timeIntervalSince(current.meeting.startedAt) < 120 { suspectedMistake = current.meeting.id }
         _ = current.mic.stop()
         if #available(macOS 14.2, *) { (current.system as? SystemAudioRecorder)?.stop() }
         current.micFile.close()
@@ -151,6 +178,7 @@ final class MeetingCenter: ObservableObject {
     func stopForQuit() {
         guard let current = recording else { return }
         recording = nil
+        liveTimer?.invalidate()
         _ = current.mic.stop()
         if #available(macOS 14.2, *) { (current.system as? SystemAudioRecorder)?.stop() }
         current.micFile.close()
@@ -165,8 +193,42 @@ final class MeetingCenter: ObservableObject {
 
     func delete(_ id: String) {
         guard recording?.meeting.id != id else { return }
+        discarded.insert(id)
         try? FileManager.default.removeItem(at: MeetingCenter.directory.appendingPathComponent(id))
         meetings.removeAll { $0.id == id }
+        if suspectedMistake == id { suspectedMistake = nil }
+    }
+
+    /// The answer to "Começou sem querer?": keep it, or delete it even mid-processing.
+    func resolveMistake(keep: Bool) {
+        guard let id = suspectedMistake else { return }
+        suspectedMistake = nil
+        if !keep { delete(id) }
+    }
+
+    // MARK: - Live transcription
+
+    /// Every 8 s: the stretches of speech that have ended in each track are transcribed and leave memory.
+    private func transcribeLive() async {
+        guard !liveBusy, recording != nil else { return }
+        liveBusy = true
+        defer { liveBusy = false }
+        for (source, buffer) in liveBuffers {
+            let (samples, offset) = buffer.snapshot()
+            let duration = Double(samples.count) / WavFileWriter.sampleRate
+            let ranges = await Task.detached { SpeechDetector.segments(levels: SpeechDetector.levels(of: samples)) }.value
+            let finished = ranges.filter { $0.upperBound < duration - 1 }
+            for range in finished {
+                let slice = Array(samples[Int(range.lowerBound * WavFileWriter.sampleRate)..<min(samples.count, Int(range.upperBound * WavFileWriter.sampleRate))])
+                guard let text = try? await transcribe(AudioRecorder.wavData(from: slice))
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty, recording != nil else { continue }
+                live.append(.init(source: source, start: offset + range.lowerBound, end: offset + range.upperBound, text: correct(text)))
+                live.sort { $0.start < $1.start }
+            }
+            // Keep what may still be speech; silence older than 30 s goes away.
+            let keepFrom = finished.last?.upperBound ?? max(0, duration - 30)
+            buffer.drop(seconds: keepFrom)
+        }
     }
 
     func resummarize(_ id: String) {
@@ -204,6 +266,7 @@ final class MeetingCenter: ObservableObject {
     }
 
     private func save(_ meeting: Meeting) {
+        guard !discarded.contains(meeting.id) else { return }
         if let data = try? Self.encoder.encode(meeting) {
             try? data.write(to: meeting.folder.appendingPathComponent("meeting.json"), options: .atomic)
         }
@@ -398,7 +461,20 @@ enum SpeechDetector {
     /// median: on a track that is mostly speech (the others, in a lively call) the median falls inside the speech
     /// and nothing would be detected.
     static func segments(in url: URL) -> [ClosedRange<TimeInterval>] {
-        let levels = WavFileWriter.levels(in: url, window: window)
+        segments(levels: WavFileWriter.levels(in: url, window: window))
+    }
+
+    /// RMS per 30 ms window of samples in memory (the live transcription's buffers).
+    static func levels(of samples: [Float]) -> [Float] {
+        stride(from: 0, to: samples.count, by: window).map { start in
+            let end = min(start + window, samples.count)
+            var power: Float = 0
+            for i in start..<end { power += samples[i] * samples[i] }
+            return sqrt(power / Float(end - start))
+        }
+    }
+
+    static func segments(levels: [Float]) -> [ClosedRange<TimeInterval>] {
         guard !levels.isEmpty else { return [] }
         let sorted = levels.sorted()
         let floor = sorted[sorted.count / 10], loud = sorted[sorted.count * 9 / 10]
@@ -469,5 +545,29 @@ enum SpeechDetector {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
+    }
+}
+
+/// One track's recent audio, kept in memory for the live transcription; filled from the audio threads.
+final class LiveBuffer: @unchecked Sendable {
+    private var samples: [Float] = []
+    /// Seconds already dropped from the front, so times stay relative to the start of the recording.
+    private var offset: TimeInterval = 0
+    private let lock = NSLock()
+
+    func append(_ chunk: [Float]) {
+        lock.withLock { samples.append(contentsOf: chunk) }
+    }
+
+    func snapshot() -> ([Float], TimeInterval) {
+        lock.withLock { (samples, offset) }
+    }
+
+    func drop(seconds: TimeInterval) {
+        lock.withLock {
+            let count = min(samples.count, Int(seconds * WavFileWriter.sampleRate))
+            samples.removeFirst(count)
+            offset += Double(count) / WavFileWriter.sampleRate
+        }
     }
 }

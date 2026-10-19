@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import AVFoundation
 import Combine
 import Sparkle
@@ -21,6 +22,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     @MainActor private lazy var meetings = MeetingCenter()
     @MainActor private lazy var detector = MeetingDetector()
     private var offerTimeout: DispatchWorkItem?
+    private var mistakeTimeout: DispatchWorkItem?
     private lazy var mainWindow = MainWindowController(model: model, meetings: MainActor.assumeIsolated { meetings })
     private let meetingItem = NSMenuItem(title: "Gravar reunião", action: nil, keyEquivalent: "")
     private let hotkey = HotkeyMonitor()
@@ -236,6 +238,18 @@ final class AppController: NSObject, NSApplicationDelegate {
             TextProcessor.apply(text, replacements: self?.model.replacements ?? [], snippets: [])
         }
         overlay.state.onToggleMeeting = { [weak self] in self?.toggleMeeting() }
+        overlay.state.onStartMeeting = { [weak self] in
+            guard let self, self.meetings.recordingSince == nil else { return }
+            self.meetings.start()
+        }
+        overlay.state.onToggleLive = { [weak self] in
+            guard let self else { return }
+            self.overlay.state.liveVisible.toggle()
+        }
+        overlay.state.onResolveMistake = { [weak self] keep in
+            self?.mistakeTimeout?.cancel()
+            self?.meetings.resolveMistake(keep: keep)
+        }
         overlay.state.onAcceptOffer = { [weak self] offer in
             guard let self else { return }
             self.clearOffer()
@@ -269,7 +283,27 @@ final class AppController: NSObject, NSApplicationDelegate {
             // Recording started some other way: the offer to record is moot.
             if since != nil, case .record = self?.overlay.state.offer { self?.clearOffer() }
             self?.meetingItem.title = since == nil ? "Gravar reunião" : "Parar gravação da reunião"
+            // The live transcript belongs to the recording: it closes with it.
+            if since == nil { self?.overlay.state.liveVisible = false }
             self?.overlay.layout()
+        }
+        .store(in: &subscriptions)
+        meetings.$live.sink { [weak self] live in
+            withAnimation(.easeOut(duration: 0.25)) { self?.overlay.state.live = live }
+        }
+        .store(in: &subscriptions)
+        // "Começou sem querer?" stays 15 s; with no answer the meeting is kept.
+        meetings.$suspectedMistake.sink { [weak self] id in
+            guard let self else { return }
+            self.mistakeTimeout?.cancel()
+            self.overlay.state.mistake = id != nil
+            self.overlay.layout()
+            guard id != nil else { return }
+            let timeout = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated { self?.meetings.resolveMistake(keep: true) }
+            }
+            self.mistakeTimeout = timeout
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeout)
         }
         .store(in: &subscriptions)
     }

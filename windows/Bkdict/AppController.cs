@@ -44,7 +44,10 @@ public sealed class AppController
     private MeetingRecorder? meetingRecorder;
     private DateTime meetingStartedAt;
     private readonly DispatcherTimer meetingTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private LiveTranscriber? live;
+    private readonly DispatcherTimer liveTimer = new() { Interval = TimeSpan.FromSeconds(8) };
     private readonly MeetingDetector detector = new();
+    private static readonly System.Windows.Media.Color ReadyColor = System.Windows.Media.Color.FromRgb(0x7F, 0xA8, 0x8A);
     /// The call whose start offer was used or dismissed; a new call offers again.
     private string? offeredCall;
 
@@ -149,6 +152,7 @@ public sealed class AppController
             model.MeetingElapsed = elapsed;
             overlay.MeetingElapsed = elapsed;
         };
+        liveTimer.Tick += (_, _) => { if (live is { } current) _ = current.TickAsync(); };
     }
 
     /// Meetings left unfinished by a quit (or a crash) are processed again, one at a time.
@@ -182,9 +186,12 @@ public sealed class AppController
             }
             if (model.RecordingMeeting != null || offeredCall == app) return;
             offeredCall = app;
-            overlay.ShowOffer($"Reunião no {app}", "Gravar", "\uE7C8", TimeSpan.FromSeconds(20),
-                run: () => { if (model.RecordingMeeting == null) StartMeeting(app); },
-                dismissed: () => { });
+            overlay.ShowCard(new OverlayWindow.Card("\uE714", "Reunião detectada", $"{app} · agora", "Gravar",
+                Run: () => { if (model.RecordingMeeting == null) StartMeeting(app); },
+                Dismissed: () => { })
+            {
+                Dot = ReadyColor, CompactSubtitle = "agora", ActionShowsSymbol = true,
+            }, TimeSpan.FromSeconds(20));
         };
         detector.CallEnded += async app =>
         {
@@ -196,9 +203,13 @@ public sealed class AppController
                 await StopMeetingAsync(recording);
                 return;
             }
-            overlay.ShowOffer($"A chamada no {app} acabou", "Parar e resumir", "\uE71A", TimeSpan.FromSeconds(30),
-                run: async () => { if (model.RecordingMeeting == recording) await StopMeetingAsync(recording); },
-                dismissed: () => { });
+            var recorded = Meeting.Clock((DateTime.Now - meetingStartedAt).TotalSeconds);
+            overlay.ShowCard(new OverlayWindow.Card("\uE71A", "A chamada acabou", $"{app} · {recorded} gravados", "Parar e resumir",
+                Run: async () => { if (model.RecordingMeeting == recording) await StopMeetingAsync(recording); },
+                Dismissed: () => { })
+            {
+                Dot = System.Windows.Media.Color.FromRgb(0xB3, 0x37, 0x51),
+            }, TimeSpan.FromSeconds(30));
         };
         detector.Start();
     }
@@ -225,6 +236,12 @@ public sealed class AppController
         MeetingStore.Save(meeting);
         meetingRecorder = recording;
         meetingStartedAt = DateTime.Now;
+        // The live transcript, from the same audio as the files (docs/reunioes.md, "Transcrição ao vivo").
+        var transcriber = new LiveTranscriber(TranscribeAsync);
+        transcriber.Changed += utterances => overlay.LiveUtterances = utterances;
+        recording.Captured = transcriber.Append;
+        live = transcriber;
+        liveTimer.Start();
         model.Meetings.Insert(0, meeting);
         model.RecordingMeeting = meeting;
         model.MeetingElapsed = TimeSpan.Zero;
@@ -239,16 +256,43 @@ public sealed class AppController
         var recording = meetingRecorder;
         meetingRecorder = null;
         meetingTimer.Stop();
+        liveTimer.Stop();
+        int words = live?.WordCount ?? 0;
+        live?.Stop();
+        live = null;
+        if (recording != null) recording.Captured = null;
         overlay.ClearOffer();
         model.RecordingMeeting = null;
         overlay.MeetingElapsed = null;
         tray?.SetMeetingRecording(false);
         meeting.Duration = (DateTime.Now - meetingStartedAt).TotalSeconds;
         Play(Sound.Stop);
+        if (words < 15 && meeting.Duration < 120) AskIfAccidental(meeting);
         if (recording != null) await recording.StopAsync();
+        if (meeting.Discarded)
+        {
+            // Discarded while the files were still open: the folder could not go then.
+            MeetingStore.Delete(meeting);
+            return;
+        }
         meeting.Status = Meeting.Transcribing;
         MeetingStore.Save(meeting);
         if (processor != null) await processor.ProcessAsync(meeting);
+    }
+
+    /// "Começou sem querer?": almost nothing was heard. Descartar deletes the meeting, even while it is processed;
+    /// Manter or the 15 s running out leave it.
+    private void AskIfAccidental(Meeting meeting)
+    {
+        overlay.ShowCard(new OverlayWindow.Card("\uE7BA", "Começou sem querer?",
+            "Só algumas palavras foram captadas. Manter ou descartar a reunião?", "Manter",
+            Run: () => { },
+            Dismissed: () => { })
+        {
+            SecondaryLabel = "Descartar",
+            Secondary = () => model.DeleteMeeting(meeting),
+            Dismissable = false,
+        }, TimeSpan.FromSeconds(15));
     }
 
     /// The bar's buttons and menu, and the settings it follows.
@@ -277,6 +321,7 @@ public sealed class AppController
     public void Shutdown()
     {
         detector.Stop();
+        live?.Stop();
         // Quitting mid-meeting closes the files; the transcription runs on the next launch.
         if (meetingRecorder is { } recording && model.RecordingMeeting is { } meeting)
         {

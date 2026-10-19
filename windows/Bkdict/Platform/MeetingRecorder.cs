@@ -35,6 +35,9 @@ public sealed class MeetingRecorder
     /// False when the system audio could not be captured: the meeting is recorded from the microphone only.
     public bool SystemAudio { get; private set; }
 
+    /// Each track's samples as they are written ("me" or "them"), for the live transcript. Called on audio threads.
+    public Action<string, short[]>? Captured { get; set; }
+
     public MeetingRecorder(string micPath, string systemPath)
     {
         this.micPath = micPath;
@@ -51,7 +54,16 @@ public sealed class MeetingRecorder
             WaveFormat = format,
             BufferMilliseconds = 100,
         };
-        mic.DataAvailable += (_, e) => { lock (gate) micWriter?.Write(e.Buffer, 0, e.BytesRecorded); };
+        mic.DataAvailable += (_, e) =>
+        {
+            lock (gate) micWriter?.Write(e.Buffer, 0, e.BytesRecorded);
+            if (Captured is { } captured)
+            {
+                var samples = new short[e.BytesRecorded / 2];
+                Buffer.BlockCopy(e.Buffer, 0, samples, 0, samples.Length * 2);
+                captured("me", samples);
+            }
+        };
         mic.RecordingStopped += (_, _) => micStopped.TrySetResult(true);
 
         try
@@ -139,13 +151,16 @@ public sealed class MeetingRecorder
             long expected = Expected();
             if (expected - systemWritten > produced + Slack) PadTo(expected - produced, systemWriter);
             var pcm = new byte[produced * 2];
+            var samples = new short[produced];
             for (int i = 0; i < produced; i++)
             {
                 short value = (short)Math.Clamp(output[i] * 32767f, short.MinValue, short.MaxValue);
+                samples[i] = value;
                 pcm[i * 2] = (byte)value;
                 pcm[i * 2 + 1] = (byte)(value >> 8);
             }
             systemWriter.Write(pcm, 0, pcm.Length);
+            Captured?.Invoke("them", samples);
             systemWritten += produced;
             lastSystemData = clock.ElapsedMilliseconds;
         }
@@ -184,6 +199,7 @@ public sealed class MeetingRecorder
         {
             int chunk = (int)Math.Min(missing, zeros.Length / 2);
             writer.Write(zeros, 0, chunk * 2);
+            Captured?.Invoke("them", new short[chunk]);
             missing -= chunk;
             systemWritten += chunk;
         }

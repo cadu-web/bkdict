@@ -30,11 +30,15 @@ public sealed class MeetingProcessor
         await queue.WaitAsync();
         try
         {
+            if (meeting.Discarded) return;
             // Resumes from the step it stopped at: a transcript already made is not made again.
             bool transcribed = meeting.Segments.Count > 0 && meeting.Status is Meeting.Separating or Meeting.Summarizing;
             if (!transcribed) await TranscribeAsync(meeting);
             if (meeting.Status != Meeting.Summarizing || !transcribed) await SeparateAsync(meeting);
             await SummarizeAsync(meeting);
+        }
+        catch (OperationCanceledException) when (meeting.Discarded)
+        {
         }
         catch (Exception e)
         {
@@ -44,9 +48,17 @@ public sealed class MeetingProcessor
         }
         finally
         {
-            MeetingStore.Save(meeting);
+            // Deleted while processing: a file that was open when the folder was deleted kept it there.
+            if (meeting.Discarded) MeetingStore.Delete(meeting);
+            else MeetingStore.Save(meeting);
             queue.Release();
         }
+    }
+
+    /// Stops a processing whose meeting was deleted ("Começou sem querer?" → Descartar, or the meetings screen).
+    private static void ThrowIfDiscarded(Meeting meeting)
+    {
+        if (meeting.Discarded) throw new OperationCanceledException();
     }
 
     /// Writes the summary again from the transcript, e.g. after configuring the AI.
@@ -56,6 +68,9 @@ public sealed class MeetingProcessor
         try
         {
             await SummarizeAsync(meeting);
+        }
+        catch (OperationCanceledException) when (meeting.Discarded)
+        {
         }
         finally
         {
@@ -88,6 +103,7 @@ public sealed class MeetingProcessor
         var segments = new List<MeetingSegment>();
         for (int i = 0; i < pending.Count; i++)
         {
+            ThrowIfDiscarded(meeting);
             var (source, track, start, end) = pending[i];
             var samples = await Task.Run(() => track.Read(start, end));
             var text = (await transcribe(AudioRecorder.Wav(samples))).Trim();
@@ -107,6 +123,7 @@ public sealed class MeetingProcessor
     /// Names the voices of the "them" track. A failure only leaves the others as "Eles".
     private async Task SeparateAsync(Meeting meeting)
     {
+        ThrowIfDiscarded(meeting);
         meeting.Speakers = new List<string>();
         foreach (var segment in meeting.Segments) segment.Speaker = null;
         if (!meeting.SystemAudio || !File.Exists(meeting.SystemPath) || meeting.Segments.All(s => s.Source != "them")) return;
@@ -139,6 +156,7 @@ public sealed class MeetingProcessor
 
     private async Task SummarizeAsync(Meeting meeting)
     {
+        ThrowIfDiscarded(meeting);
         meeting.Status = Meeting.Summarizing;
         MeetingStore.Save(meeting);
         var transcript = meeting.TranscriptText();
@@ -160,6 +178,7 @@ public sealed class MeetingProcessor
                 Log.Write($"Meeting {meeting.Id} summary: {e.Message}");
             }
         }
+        ThrowIfDiscarded(meeting);
         meeting.Status = Meeting.Ready;
     }
 }

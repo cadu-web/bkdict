@@ -86,6 +86,7 @@ public sealed class AppModel : ObservableObject
     public void DeleteMeeting(Meeting meeting)
     {
         if (meeting == recordingMeeting) return;
+        // Also while it is being processed: the processor sees Discarded and stops (see MeetingProcessor).
         MeetingStore.Delete(meeting);
         Meetings.Remove(meeting);
     }

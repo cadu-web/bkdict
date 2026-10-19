@@ -113,6 +113,9 @@ public sealed class Meeting : ObservableObject
         OnPropertyChanged(nameof(Speakers));
     }
 
+    /// Set when the meeting is deleted: a processing still running stops and saves nothing more.
+    [JsonIgnore] public bool Discarded { get; set; }
+
     [JsonIgnore] public string Folder => Path.Combine(Paths.Meetings, Id);
     [JsonIgnore] public string MicPath => Path.Combine(Folder, "mic.wav");
     [JsonIgnore] public string SystemPath => Path.Combine(Folder, "system.wav");
@@ -189,6 +192,7 @@ public static class MeetingStore
 
     public static void Save(Meeting meeting)
     {
+        if (meeting.Discarded) return;
         try
         {
             Directory.CreateDirectory(meeting.Folder);
@@ -202,6 +206,7 @@ public static class MeetingStore
 
     public static void Delete(Meeting meeting)
     {
+        meeting.Discarded = true;
         try
         {
             if (Directory.Exists(meeting.Folder)) Directory.Delete(meeting.Folder, recursive: true);

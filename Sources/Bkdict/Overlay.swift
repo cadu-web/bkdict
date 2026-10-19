@@ -38,6 +38,13 @@ final class OverlayState: ObservableObject {
     @Published var meetingSince: Date?
     /// A call the Bkdict noticed: an offer to record it, or to stop when it ended.
     @Published var offer: MeetingOffer?
+    /// The offer arrives compact ("Reunião detectada • agora") and then opens into the card with the button.
+    @Published var offerExpanded = true
+    /// A recording just stopped with almost nothing said: "Começou sem querer?".
+    @Published var mistake = false
+    /// The live transcript panel, and what it shows.
+    @Published var liveVisible = false
+    @Published var live: [Meeting.Segment] = []
 
     var isRecording: Bool { [.listening, .handsFree, .command].contains(phase) }
 
@@ -50,6 +57,9 @@ final class OverlayState: ObservableObject {
     var onHideForAnHour: () -> Void = {}
     var onSelectMicrophone: (String) -> Void = { _ in }
     var onToggleMeeting: () -> Void = {}
+    var onStartMeeting: () -> Void = {}
+    var onToggleLive: () -> Void = {}
+    var onResolveMistake: (Bool) -> Void = { _ in }
     var onAcceptOffer: (MeetingOffer) -> Void = { _ in }
     var onDismissOffer: () -> Void = {}
     // Wired by OverlayWindow, which owns the panel.
@@ -76,16 +86,20 @@ final class OverlayWindow {
     private enum Size {
         static let idle = NSSize(width: 44, height: 8)
         static let idleSide = NSSize(width: 8, height: 44)
-        static let hovered = NSSize(width: 168, height: 36)
+        static let hovered = NSSize(width: 204, height: 36)
         static let recording = NSSize(width: 300, height: 40)
         static let busy = NSSize(width: 260, height: 40)
         static let tip = NSSize(width: 380, height: 40)
         // On a side the whole bar stands up.
-        static let hoveredSide = NSSize(width: 52, height: 112)
+        static let hoveredSide = NSSize(width: 52, height: 148)
         static let recordingSide = NSSize(width: 40, height: 104)
         static let busySide = NSSize(width: 40, height: 40)
         static let meeting = NSSize(width: 112, height: 28)
-        static let offer = NSSize(width: 360, height: 40)
+        static let offer = NSSize(width: 380, height: 64)
+        static let offerCompact = NSSize(width: 240, height: 40)
+        static let mistake = NSSize(width: 380, height: 64)
+        static let meetingHover = NSSize(width: 220, height: 36)
+        static let meetingHoverSide = NSSize(width: 40, height: 156)
         static let meetingSide = NSSize(width: 32, height: 84)
     }
 
@@ -112,6 +126,13 @@ final class OverlayWindow {
         hoverObservation = state.$hovering.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.layout() }
         }
+        offerObservation = state.$offer.removeDuplicates().dropFirst().sink { [weak self] offer in
+            DispatchQueue.main.async { self?.offerChanged(offer) }
+        }
+        livePanel.state = state
+        liveObservation = state.$liveVisible.combineLatest(state.$meetingSince).dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.layoutLive() }
+        }
         // With several monitors the bar sits on the one with the mouse, and moves when the mouse does.
         screenTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self, self.state.phase == .hidden, self.dragOffset == nil, Self.mouseScreen != self.currentScreen else { return }
@@ -125,6 +146,9 @@ final class OverlayWindow {
     }
 
     private var hoverObservation: Any?
+    private var offerObservation: Any?
+    private var liveObservation: Any?
+    private let livePanel = LivePanel()
     private var screenTimer: Timer?
     private var currentScreen: NSScreen?
 
@@ -146,6 +170,56 @@ final class OverlayWindow {
         let origin = Self.slot(state.edge, size: size, in: screen.visibleFrame)
         panel.setFrame(NSRect(origin: origin, size: size), display: true, animate: animated)
         panel.orderFrontRegardless()
+        layoutLive()
+    }
+
+    /// The offer slides in from the edge, compact, then opens into the full card.
+    private func offerChanged(_ offer: MeetingOffer?) {
+        guard let offer else {
+            layout()
+            return
+        }
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        state.offerExpanded = reduceMotion
+        layout()
+        guard !reduceMotion else { return }
+        let final = panel.frame
+        var start = final
+        switch state.edge {
+        case .bottom: start.origin.y -= 10
+        case .left: start.origin.x -= 10
+        case .right: start.origin.x += 10
+        }
+        panel.alphaValue = 0
+        panel.setFrame(start, display: false)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(final, display: true)
+            panel.animator().alphaValue = 1
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self, self.state.offer == offer, !self.state.offerExpanded else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { self.state.offerExpanded = true }
+            self.layout(animated: true)
+        }
+    }
+
+    /// The live transcript sits above the bar at the bottom, or beside it on a side.
+    func layoutLive() {
+        guard state.liveVisible, state.meetingSince != nil, panel.isVisible else {
+            livePanel.hide()
+            return
+        }
+        let size = LivePanel.size
+        let bar = panel.frame
+        let origin: NSPoint
+        switch state.edge {
+        case .bottom: origin = NSPoint(x: (bar.midX - size.width / 2).rounded(), y: bar.maxY + 10)
+        case .left: origin = NSPoint(x: bar.maxX + 10, y: (bar.midY - size.height / 2).rounded())
+        case .right: origin = NSPoint(x: bar.minX - size.width - 10, y: (bar.midY - size.height / 2).rounded())
+        }
+        livePanel.show(at: NSRect(origin: origin, size: size))
     }
 
     /// The bar's size for its state, or nil when it should not be on screen.
@@ -154,9 +228,12 @@ final class OverlayWindow {
         switch state.phase {
         case .hidden:
             let snoozed = hiddenUntil.map { $0 > Date() } ?? false
-            guard (showsIdleBar && !snoozed) || state.meetingSince != nil || state.offer != nil else { return nil }
+            guard (showsIdleBar && !snoozed) || state.meetingSince != nil || state.offer != nil || state.mistake else { return nil }
+            if state.mistake { return Size.mistake }
             // The offer keeps its text on a side too: a card lying against that edge, not a column of icons.
-            if state.offer != nil { return Size.offer }
+            if state.offer != nil { return state.offerExpanded ? Size.offer : Size.offerCompact }
+            // While a meeting records, hovering opens its controls (stop stays reachable), not the dictation.
+            if state.hovering, state.meetingSince != nil { return side ? Size.meetingHoverSide : Size.meetingHover }
             if state.hovering { return side ? Size.hoveredSide : Size.hovered }
             if state.meetingSince != nil { return side ? Size.meetingSide : Size.meeting }
             return side ? Size.idleSide : Size.idle
@@ -284,15 +361,21 @@ private struct BarView: View {
     }
 
     private var isIdleHandle: Bool {
-        state.phase == .hidden && !state.hovering && state.meetingSince == nil && state.offer == nil
+        state.phase == .hidden && !state.hovering && state.meetingSince == nil && state.offer == nil && !state.mistake
     }
 
     @ViewBuilder private var content: some View {
         let side = state.edge != .bottom
         switch state.phase {
         case .hidden:
-            if let offer = state.offer {
-                AnyView(OfferView(offer: offer, accept: { state.onAcceptOffer(offer) }, dismiss: state.onDismissOffer))
+            if state.mistake {
+                AnyView(MistakeView(resolve: state.onResolveMistake))
+            } else if let offer = state.offer {
+                AnyView(OfferView(offer: offer, expanded: state.offerExpanded, since: state.meetingSince,
+                                  accept: { state.onAcceptOffer(offer) }, dismiss: state.onDismissOffer))
+            } else if state.hovering, let since = state.meetingSince {
+                AnyView(MeetingControls(since: since, vertical: side, liveVisible: state.liveVisible,
+                                        dictate: state.onDictate, toggleLive: state.onToggleLive, stop: state.onToggleMeeting))
             } else if state.hovering {
                 side ? AnyView(idleSide) : AnyView(idle)
             } else if let since = state.meetingSince {
@@ -316,6 +399,7 @@ private struct BarView: View {
                 .foregroundStyle(Theme.onAccent)
             if !state.dictateKeys.isEmpty { KeyCaps(keys: state.dictateKeys, onAccent: true) }
             BarButton(systemImage: "mic.fill", fill: Theme.accentOnTinta, help: "Ditar sem segurar a tecla", action: state.onDictate)
+            BarButton(systemImage: "record.circle", fill: Theme.onAccent.opacity(0.12), help: "Gravar reunião", action: state.onStartMeeting)
         }
         .padding(.vertical, 8)
     }
@@ -342,6 +426,7 @@ private struct BarView: View {
             if !state.dictateKeys.isEmpty { KeyCaps(keys: state.dictateKeys, onAccent: true) }
             Spacer(minLength: 0)
             BarButton(systemImage: "mic.fill", fill: Theme.accentOnTinta, help: "Ditar sem segurar a tecla", action: state.onDictate)
+            BarButton(systemImage: "record.circle", fill: Theme.onAccent.opacity(0.12), help: "Gravar reunião", action: state.onStartMeeting)
         }
         .padding(.leading, 12)
         .padding(.trailing, 5)
@@ -542,35 +627,266 @@ enum MeetingOffer: Equatable {
         case .stop: "Parar e resumir"
         }
     }
+
+    var app: String {
+        switch self {
+        case .record(let app), .stop(let app): app
+        }
+    }
+
+    var isStop: Bool { if case .stop = self { true } else { false } }
 }
 
+/// "Reunião detectada": compact while it slides in, then the card with the call and the record button.
 private struct OfferView: View {
     let offer: MeetingOffer
+    let expanded: Bool
+    let since: Date?
     let accept: () -> Void
     let dismiss: () -> Void
 
+    private static let green = Color(hex: 0x7FA88A)
+
     var body: some View {
-        HStack(spacing: 10) {
-            Circle().fill(Theme.accentOnTinta).frame(width: 8, height: 8)
-            Text(offer.text)
+        Group {
+            if expanded { card.transition(.opacity) } else { compact.transition(.opacity) }
+        }
+        .help(offer.text)
+    }
+
+    private var compact: some View {
+        HStack(spacing: 8) {
+            Image(systemName: offer.isStop ? "stop.fill" : "video.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.accentOnTinta)
+            Text(offer.isStop ? "A chamada acabou" : "Reunião detectada")
                 .font(Theme.body(13, .medium))
                 .foregroundStyle(Theme.onAccent)
-                .lineLimit(1)
+            Spacer(minLength: 0)
+            Circle().fill(Self.green).frame(width: 6, height: 6)
+            Text("agora").font(Theme.body(12)).foregroundStyle(Theme.onAccent.opacity(0.6))
+        }
+        .padding(.horizontal, 14)
+    }
+
+    private var card: some View {
+        HStack(spacing: 12) {
+            Image(systemName: offer.isStop ? "stop.fill" : "video.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.accentOnTinta)
+                .frame(width: 36, height: 36)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.accentOnTinta.opacity(0.2)))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(offer.isStop ? "A chamada acabou" : "Reunião detectada")
+                    .font(Theme.body(14, .medium))
+                    .foregroundStyle(Theme.onAccent)
+                HStack(spacing: 5) {
+                    Circle().fill(Self.green).frame(width: 6, height: 6)
+                    Text(subtitle)
+                        .font(Theme.body(12))
+                        .foregroundStyle(Theme.onAccent.opacity(0.6))
+                        .lineLimit(1)
+                }
+            }
             Spacer(minLength: 0)
             Button(action: accept) {
-                Text(offer.action)
-                    .font(Theme.body(12, .semibold))
-                    .foregroundStyle(Theme.onAccent)
-                    .padding(.horizontal, 10)
-                    .frame(height: 26)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.accentOnTinta))
+                HStack(spacing: 6) {
+                    BrandMark().fill(Color(hex: 0x0A0A0A)).frame(width: 15, height: 15)
+                    Text(offer.action).font(Theme.body(13, .semibold))
+                }
+                .foregroundStyle(Color(hex: 0x0A0A0A))
+                .padding(.horizontal, 12)
+                .frame(height: 34)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.onAccent))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             BarButton(systemImage: "xmark", fill: Theme.onAccent.opacity(0.12), help: "Agora não", action: dismiss)
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 6)
-        .help(offer.text)
+        .padding(.horizontal, 12)
+    }
+
+    private var subtitle: String {
+        guard offer.isStop, let since else { return "\(offer.app) · agora" }
+        return "\(offer.app) · \(Meeting.clock(Date().timeIntervalSince(since))) gravados"
+    }
+}
+
+/// "Começou sem querer?": a recording stopped with almost nothing said.
+private struct MistakeView: View {
+    let resolve: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.accentOnTinta)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Começou sem querer?").font(Theme.body(14, .medium)).foregroundStyle(Theme.onAccent)
+                Text("Só algumas palavras foram captadas. Manter ou descartar a reunião?")
+                    .font(Theme.body(12))
+                    .foregroundStyle(Theme.onAccent.opacity(0.65))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button("Descartar") { resolve(false) }
+                .buttonStyle(.plain)
+                .font(Theme.body(13, .medium))
+                .foregroundStyle(Theme.onAccent)
+            Button { resolve(true) } label: {
+                Text("Manter")
+                    .font(Theme.body(13, .semibold))
+                    .foregroundStyle(Color(hex: 0x0A0A0A))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.onAccent))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+    }
+}
+
+/// Hovering the bar during a meeting: the time, dictate, the live transcript and stop.
+private struct MeetingControls: View {
+    let since: Date
+    let vertical: Bool
+    let liveVisible: Bool
+    let dictate: () -> Void
+    let toggleLive: () -> Void
+    let stop: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let elapsed = Int(context.date.timeIntervalSince(since))
+            let minutes = String(format: "%02d", elapsed / 60), seconds = String(format: "%02d", elapsed % 60)
+            if vertical {
+                VStack(spacing: 6) {
+                    Circle().fill(Theme.accentOnTinta).frame(width: 8, height: 8)
+                    VStack(spacing: 0) {
+                        Text(minutes)
+                        Text(seconds)
+                    }
+                    .font(Theme.mono(11, .medium))
+                    .foregroundStyle(Theme.onAccent)
+                    buttons
+                }
+                .padding(.vertical, 8)
+            } else {
+                HStack(spacing: 8) {
+                    Circle().fill(Theme.accentOnTinta).frame(width: 8, height: 8)
+                    Text("\(minutes):\(seconds)").font(Theme.mono(12, .medium)).foregroundStyle(Theme.onAccent)
+                    Spacer(minLength: 0)
+                    buttons
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 5)
+            }
+        }
+    }
+
+    @ViewBuilder private var buttons: some View {
+        BarButton(systemImage: "mic.fill", fill: Theme.onAccent.opacity(0.12), help: "Ditar", action: dictate)
+        BarButton(systemImage: "text.bubble", fill: liveVisible ? Theme.onAccent.opacity(0.3) : Theme.onAccent.opacity(0.12),
+                  help: liveVisible ? "Esconder a transcrição" : "Ver a transcrição ao vivo", action: toggleLive)
+        BarButton(systemImage: "stop.fill", fill: Theme.accentOnTinta, help: "Parar e resumir", action: stop)
+    }
+}
+
+/// The live transcript: a floating panel next to the bar while a meeting records.
+private final class LivePanel {
+    static let size = NSSize(width: 340, height: 260)
+    weak var state: OverlayState? {
+        didSet { if let state { panel.contentView = FirstClickHostingView(rootView: LiveView(state: state)) } }
+    }
+    private let panel: NSPanel
+
+    init() {
+        panel = BarPanel(contentRect: NSRect(origin: .zero, size: Self.size), styleMask: [.borderless, .nonactivatingPanel],
+                         backing: .buffered, defer: true)
+        panel.level = .statusBar
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+    }
+
+    func show(at frame: NSRect) {
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+    }
+
+    func hide() {
+        panel.orderOut(nil)
+    }
+}
+
+private struct LiveView: View {
+    @ObservedObject var state: OverlayState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Circle().fill(Theme.accentOnTinta).frame(width: 7, height: 7)
+                Text("AO VIVO").font(Theme.mono(10, .medium)).tracking(0.8).foregroundStyle(Theme.onAccent)
+                if let since = state.meetingSince {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(Meeting.clock(context.date.timeIntervalSince(since)))
+                            .font(Theme.mono(10, .medium))
+                            .foregroundStyle(Theme.onAccent.opacity(0.6))
+                    }
+                }
+                Spacer()
+                Button(action: state.onToggleLive) {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.onAccent.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .help("Esconder a transcrição")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            Rectangle().fill(Theme.onAccent.opacity(0.1)).frame(height: 1)
+            if state.live.isEmpty {
+                Text("Ouvindo… as falas aparecem aqui assim que cada um terminar de falar.")
+                    .font(Theme.body(12))
+                    .foregroundStyle(Theme.onAccent.opacity(0.6))
+                    .padding(14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(Array(state.live.enumerated()), id: \.offset) { index, segment in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(segment.source == .me ? "Você" : "Eles")
+                                        .font(Theme.body(11, .semibold))
+                                        .foregroundStyle(segment.source == .me ? Theme.accentOnTinta : Theme.onAccent)
+                                    Text(segment.text)
+                                        .font(Theme.body(12))
+                                        .foregroundStyle(Theme.onAccent.opacity(0.9))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .id(index)
+                                .transition(.opacity.combined(with: .offset(y: 6)))
+                            }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onChange(of: state.live.count) { _, count in
+                        withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(count - 1, anchor: .bottom) }
+                    }
+                    .onAppear { proxy.scrollTo(state.live.count - 1, anchor: .bottom) }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BarView.shape.fill(Color(hex: 0x0A0A0A).opacity(0.94)))
+        .overlay(BarView.shape.strokeBorder(Theme.onAccent.opacity(0.14)))
+        .clipShape(BarView.shape)
     }
 }
 

@@ -272,6 +272,48 @@ Se a pergunta menciona `hoje`, `ontem`, `semana` (esta semana, últimos 7 dias) 
 reuniões do período entram todas (as mais recentes primeiro, só o resumo, até os 8.000 caracteres), em vez da busca
 por palavras.
 
+# Barra durante reuniões (versão 2)
+
+Ajustes depois do primeiro teste com uma chamada real (Google Meet).
+
+## Barra aberta (mouse em cima)
+
+- **Sem reunião**: `Ditar  Fn  [🎤] [◎]` — o ◎ (`record.circle`, fundo Osso a 0,12) começa a gravar a reunião.
+  Embaixo 204×36; nas laterais em pé 52×148 (Ditar, Fn, 🎤, ◎).
+- **Gravando reunião**: o mouse em cima **não** troca a pílula pelo ditado; abre os controles da reunião:
+  `● 12:34   [🎤] [≡] [■]` — 🎤 dita (mãos livres, como sempre), ≡ (`text.bubble`) mostra/esconde a transcrição ao
+  vivo, ■ para e resume. Embaixo 220×36; nas laterais em pé 40×156 (●, tempo em duas linhas, 🎤, ≡, ■).
+
+## Transcrição ao vivo
+
+- Durante a gravação, as duas trilhas também vão para memória; a cada 8 s, em cada trilha, os trechos com fala que
+  já terminaram (o fim do trecho está a mais de 1 s do fim do que foi gravado) são transcritos pelo motor do ditado e
+  saem da memória. Mesma detecção de fala da fase 1 (sobre o que está em memória), sem remoção de eco nem vozes
+  (a transcrição final, ao parar, continua sendo feita do zero a partir dos arquivos).
+- **Painel ao vivo** (janela flutuante que não rouba foco, 340 de largura × até 260 de altura, fundo Tinta 0,94,
+  cantos 10): cabeçalho `● AO VIVO  12:34` e ✕; as últimas falas, rolando sozinho para a última, `Você` em Bordô
+  claro e `Eles` em Osso, texto em Osso a 0,9; sem falas ainda: "Ouvindo… as falas aparecem aqui assim que cada um
+  terminar de falar." Fica acima da barra (embaixo) ou ao lado dela (laterais), alinhado à barra. Abre pelo ≡ e
+  fecha pelo ✕ ou ao parar a gravação.
+
+## Começou sem querer?
+
+Ao parar uma gravação com menos de 15 palavras na transcrição ao vivo (e menos de 2 min), a barra mostra por 15 s um
+cartão 380×64: ⚠ `Começou sem querer?` / `Só algumas palavras foram captadas. Manter ou descartar a reunião?`,
+botões **Descartar** (texto) e **Manter** (Osso). Descartar apaga a reunião (mesmo em processamento); Manter ou o
+tempo esgotado deixam como está.
+
+## Aviso de reunião detectada
+
+- Chega **compacto** (240×40): ícone de câmera em Bordô claro, `Reunião detectada`, `● agora` (ponto verde
+  `#7FA88A`). Entra deslizando da borda mais próxima (8 pt, com fade) e, depois de 0,8 s, **se expande** (mola) para
+  o cartão 380×64: à esquerda o ícone de câmera num quadrado Bordô a 0,2; `Reunião detectada` (14, médio) e
+  `● Google Meet · agora` (12, Osso a 0,6); à direita o botão **Gravar** com o símbolo do Bkdict (fundo Osso, texto
+  Tinta, 34 de altura, cantos 8) e ×.
+- Fim da chamada durante a gravação: mesmo cartão com o ícone ■, `A chamada acabou`, `● Google Meet · 12:34
+  gravados` e o botão **Parar e resumir**.
+- Com "Reduzir movimento", aparece direto no tamanho final.
+
 ## Depois
 
 Nomes automáticos pelo Zoom/Meet (ver fase 3), aviso antes de uma reunião do calendário começar, pastas,
