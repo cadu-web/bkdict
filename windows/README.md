@@ -59,6 +59,8 @@ Bkdict acha os trechos com fala, transcreve cada um com o motor do ditado, tira 
 resumo (decisões, tarefas, pontos em aberto) com a IA de Modelos. Fechar o app no meio salva o que foi gravado e o
 processamento continua na próxima vez. Detalhes em [`docs/reunioes.md`](../docs/reunioes.md).
 
+Com **Detectar reuniões** ligado (Ajustes), quando Zoom, Teams, Webex, Slack, Discord ou um navegador com Meet/Teams/Zoom aberto passa a usar o microfone, a barra oferece **Gravar**; quando a chamada acaba, oferece **Parar e resumir**.
+
 ## Atalhos padrão
 
 O Windows não enxerga a tecla `Fn` (quem cuida dela é o próprio teclado), então `Ctrl + Win` faz o papel dela:

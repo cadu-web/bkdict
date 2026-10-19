@@ -133,6 +133,12 @@ public sealed class AppModel : ObservableObject
         set { settings.DictationBarEdge = value; Save(); }
     }
 
+    public bool DetectMeetings
+    {
+        get => settings.DetectMeetings;
+        set { settings.DetectMeetings = value; Save(); }
+    }
+
     public bool SoundsEnabled
     {
         get => settings.SoundsEnabled;

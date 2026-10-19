@@ -39,6 +39,9 @@ public sealed class AppSettings
     /// The dictation bar while idle; it always appears while dictating.
     public bool ShowsDictationBar { get; set; } = true;
 
+    /// Offers to record when a call starts in Zoom, Teams, Meet and others (docs/reunioes.md, "Fase 2").
+    public bool DetectMeetings { get; set; } = true;
+
     /// Where the dictation bar docks: "bottom", "left" or "right" (see OverlayWindow.Edges).
     public string DictationBarEdge { get; set; } = "bottom";
 

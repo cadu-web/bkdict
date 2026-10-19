@@ -36,6 +36,8 @@ final class OverlayState: ObservableObject {
     @Published var dragging = false
     /// When the meeting being recorded started; the idle bar then shows the time and a stop button.
     @Published var meetingSince: Date?
+    /// A call the Bkdict noticed: an offer to record it, or to stop when it ended.
+    @Published var offer: MeetingOffer?
 
     var isRecording: Bool { [.listening, .handsFree, .command].contains(phase) }
 
@@ -48,6 +50,8 @@ final class OverlayState: ObservableObject {
     var onHideForAnHour: () -> Void = {}
     var onSelectMicrophone: (String) -> Void = { _ in }
     var onToggleMeeting: () -> Void = {}
+    var onAcceptOffer: (MeetingOffer) -> Void = { _ in }
+    var onDismissOffer: () -> Void = {}
     // Wired by OverlayWindow, which owns the panel.
     var onDragChanged: () -> Void = {}
     var onDragEnded: () -> Void = {}
@@ -81,6 +85,8 @@ final class OverlayWindow {
         static let recordingSide = NSSize(width: 40, height: 104)
         static let busySide = NSSize(width: 40, height: 40)
         static let meeting = NSSize(width: 112, height: 28)
+        static let offer = NSSize(width: 360, height: 40)
+        static let offerSide = NSSize(width: 52, height: 112)
         static let meetingSide = NSSize(width: 32, height: 84)
     }
 
@@ -149,7 +155,8 @@ final class OverlayWindow {
         switch state.phase {
         case .hidden:
             let snoozed = hiddenUntil.map { $0 > Date() } ?? false
-            guard (showsIdleBar && !snoozed) || state.meetingSince != nil else { return nil }
+            guard (showsIdleBar && !snoozed) || state.meetingSince != nil || state.offer != nil else { return nil }
+            if state.offer != nil { return side ? Size.offerSide : Size.offer }
             if state.hovering { return side ? Size.hoveredSide : Size.hovered }
             if state.meetingSince != nil { return side ? Size.meetingSide : Size.meeting }
             return side ? Size.idleSide : Size.idle
@@ -276,13 +283,17 @@ private struct BarView: View {
             }
     }
 
-    private var isIdleHandle: Bool { state.phase == .hidden && !state.hovering && state.meetingSince == nil }
+    private var isIdleHandle: Bool {
+        state.phase == .hidden && !state.hovering && state.meetingSince == nil && state.offer == nil
+    }
 
     @ViewBuilder private var content: some View {
         let side = state.edge != .bottom
         switch state.phase {
         case .hidden:
-            if state.hovering {
+            if let offer = state.offer {
+                AnyView(OfferView(offer: offer, vertical: side, accept: { state.onAcceptOffer(offer) }, dismiss: state.onDismissOffer))
+            } else if state.hovering {
                 side ? AnyView(idleSide) : AnyView(idle)
             } else if let since = state.meetingSince {
                 AnyView(MeetingPill(since: since, vertical: side, stop: state.onToggleMeeting))
@@ -511,6 +522,72 @@ private struct DockGuideView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+}
+
+/// What the bar offers about a call the Bkdict noticed.
+enum MeetingOffer: Equatable {
+    case record(app: String)
+    case stop(app: String)
+
+    var text: String {
+        switch self {
+        case .record(let app): "Reunião no \(app)"
+        case .stop(let app): "A chamada no \(app) acabou"
+        }
+    }
+
+    var action: String {
+        switch self {
+        case .record: "Gravar"
+        case .stop: "Parar e resumir"
+        }
+    }
+}
+
+private struct OfferView: View {
+    let offer: MeetingOffer
+    let vertical: Bool
+    let accept: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        Group {
+            if vertical {
+                VStack(spacing: 8) {
+                    Image(systemName: "person.2.wave.2").font(.system(size: 13)).foregroundStyle(Theme.accentOnTinta)
+                    BarButton(systemImage: offer.isStop ? "stop.fill" : "record.circle", fill: Theme.accentOnTinta, help: offer.action, action: accept)
+                    BarButton(systemImage: "xmark", fill: Theme.onAccent.opacity(0.12), help: "Agora não", action: dismiss)
+                }
+                .padding(.vertical, 8)
+            } else {
+                HStack(spacing: 10) {
+                    Circle().fill(Theme.accentOnTinta).frame(width: 8, height: 8)
+                    Text(offer.text)
+                        .font(Theme.body(13, .medium))
+                        .foregroundStyle(Theme.onAccent)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Button(action: accept) {
+                        Text(offer.action)
+                            .font(Theme.body(12, .semibold))
+                            .foregroundStyle(Theme.onAccent)
+                            .padding(.horizontal, 10)
+                            .frame(height: 26)
+                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.accentOnTinta))
+                    }
+                    .buttonStyle(.plain)
+                    BarButton(systemImage: "xmark", fill: Theme.onAccent.opacity(0.12), help: "Agora não", action: dismiss)
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 6)
+            }
+        }
+        .help(offer.text)
+    }
+}
+
+private extension MeetingOffer {
+    var isStop: Bool { if case .stop = self { true } else { false } }
 }
 
 /// The idle bar while a meeting is recorded: a dot, the elapsed time and a stop button.

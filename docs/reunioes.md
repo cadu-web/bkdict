@@ -93,7 +93,48 @@ Para reuniões, um modelo maior (Qwen 2.5 7B, ou um da nuvem) resume melhor. Tra
 (mesmas seções), e gerar o resumo final a partir das notas. Sem IA configurada: a reunião fica `ready` só com a
 transcrição e o resumo diz como configurar.
 
-## Fora da fase 1
+# Fase 2 — detectar a reunião
 
-Detectar a reunião sozinho, separar as vozes do lado de lá, nomes pelo Zoom/Meet, calendário, perguntar sobre as
+O Bkdict percebe que uma chamada começou e oferece gravar; quando ela acaba, oferece parar.
+
+## Sinais (verificados a cada 3 s, só com "Detectar reuniões" ligado em Ajustes — padrão: ligado)
+
+Uma chamada está acontecendo quando **um app de reunião está usando o microfone**:
+
+| App | Mac (bundle id, por prefixo) | Windows (processo) |
+|---|---|---|
+| Zoom | `us.zoom` | `Zoom.exe` |
+| Microsoft Teams | `com.microsoft.teams` | `ms-teams.exe`, `Teams.exe` (e o pacote `MSTeams_8wekyb3d8bbwe`) |
+| Webex | `com.cisco.webex` | `CiscoCollabHost.exe`, `webexmta.exe` |
+| FaceTime | `com.apple.FaceTime` | — |
+| Slack (huddle) | `com.tinyspeck.slackmacgap` | `slack.exe` |
+| Discord | `com.hnc.Discord` | `Discord.exe` |
+| Navegador | Chrome, Safari, Arc, Edge, Firefox, Brave | `chrome.exe`, `msedge.exe`, `firefox.exe`, `brave.exe`, `arc.exe` |
+
+- **Quem usa o microfone**: Mac — objetos de processo do Core Audio (`kAudioHardwarePropertyProcessObjectList`,
+  `kAudioProcessPropertyIsRunningInput`, `kAudioProcessPropertyBundleID`; macOS 14.2+). Windows — o registro do
+  Gerenciador de Acesso a Recursos (`HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\
+  ConsentStore\microphone`, chaves `NonPackaged\*` e pacotes; em uso quando `LastUsedTimeStop` é 0).
+  O próprio Bkdict nunca conta.
+- **Navegador** só conta se alguma janela dele tiver no título `Meet`, `meet.google.com`, `Microsoft Teams`,
+  `Teams`, `Zoom`, `Whereby` ou `Jitsi` (Mac: títulos das janelas pela Acessibilidade; Windows: títulos das janelas
+  do processo). O nome mostrado é o do serviço (`Google Meet`, `Microsoft Teams`, `Zoom`…); `Meet` é testado
+  por último, porque títulos do Zoom e do Teams costumam ter "Meeting". No Mac, se nenhum título
+  puder ser lido (o Chrome só expõe as janelas à Acessibilidade quando um app assistivo pede), o navegador usando o
+  microfone já conta, com o nome do navegador (`Reunião no Chrome`).
+- A chamada **acabou** quando o app deixa de usar o microfone por 8 s seguidos.
+
+## O que a pessoa vê
+
+- **Começou e não está gravando**: a barra (fora do ditado) vira um convite por 20 s:
+  `● Reunião no Zoom   [Gravar]  ×` — embaixo 360×40; nas laterais em pé 52×112 (ícone, botão gravar, ×; o texto
+  como dica). "Gravar" começa a gravação com o título `Zoom · 18/10, 14:05`. "×" ou o tempo esgotado dispensam o
+  convite **para esta chamada** (uma nova chamada convida de novo).
+- **Acabou e está gravando**: convite `A chamada no Zoom acabou   [Parar e resumir]  ×` (mesmos tamanhos), por 30 s.
+  "×" continua gravando. Gravações iniciadas à mão também recebem o convite quando a chamada que estava ativa acaba.
+- Ajustes: linha "Detectar reuniões" — "Oferece gravar quando uma chamada começa no Zoom, Teams, Meet e outros".
+
+## Fora das fases 1 e 2
+
+Separar as vozes do lado de lá, nomes pelo Zoom/Meet, calendário, perguntar sobre as
 reuniões.

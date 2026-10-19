@@ -45,6 +45,9 @@ struct SettingsView: View {
 
             SectionCard(title: "Ditado") {
                 MicrophoneRow(model: model)
+                SettingRow(title: "Detectar reuniões", detail: "Oferece gravar quando uma chamada começa no Zoom, Teams, Meet e outros") {
+                    Toggle("", isOn: $model.detectMeetings).labelsHidden().toggleStyle(.switch)
+                }
                 SettingRow(title: "Barra de ditado", detail: "Fica no pé da tela; passe o mouse para ditar com um clique") {
                     Toggle("", isOn: $model.showsDictationBar).labelsHidden().toggleStyle(.switch)
                 }

@@ -65,6 +65,12 @@ enum Settings {
         set { defaults.set(newValue, forKey: "showsDictationBar") }
     }
 
+    /// Offer to record when a call starts, and to stop when it ends (phase 2 of meetings).
+    static var detectMeetings: Bool {
+        get { defaults.object(forKey: "detectMeetings") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "detectMeetings") }
+    }
+
     /// Where the dictation bar docks; changed by dragging it or from its menu.
     static var dictationBarEdge: DockEdge {
         get { DockEdge(rawValue: defaults.string(forKey: "dictationBarEdge") ?? "") ?? .bottom }

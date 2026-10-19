@@ -47,6 +47,8 @@ public partial class OverlayWindow : Window
     private static readonly Size Busy = new(260, 40), BusySide = new(40, 40), TipSize = new(380, 40);
     // While a meeting is recorded and nothing is being dictated (docs/reunioes.md).
     private static readonly Size MeetingPill = new(112, 28), MeetingPillSide = new(32, 84);
+    // A detected call, offered for recording (or for stopping when it ends).
+    private static readonly Size OfferSize = new(360, 40), OfferSide = new(52, 112);
 
     private readonly DockGuideWindow guide = new();
     private readonly DispatcherTimer screenTimer = new() { Interval = TimeSpan.FromSeconds(0.5) };
@@ -62,6 +64,11 @@ public partial class OverlayWindow : Window
     private TimeSpan? meetingElapsed;
     private readonly List<(TextBlock Block, Func<TimeSpan, string> Format)> meetingClocks = new();
     private string edge = Edges.Bottom;
+    private Offer? offer;
+    private readonly DispatcherTimer offerTimer = new();
+
+    /// What a detected call offers: its text, the action's label and glyph, and what happens on click or dismissal.
+    private sealed record Offer(string Text, string ActionLabel, string ActionGlyph, Action Run, Action Dismissed);
 
     // Dragging, in physical pixels.
     private Native.POINT? pressPoint;
@@ -106,6 +113,12 @@ public partial class OverlayWindow : Window
             if (phase == OverlayPhase.Hidden && !dragging && MouseMonitor().Monitor != currentMonitor) Place();
         };
         screenTimer.Start();
+        offerTimer.Tick += (_, _) =>
+        {
+            var expired = offer;
+            ClearOffer();
+            expired?.Dismissed();
+        };
         Render();
     }
 
@@ -161,6 +174,29 @@ public partial class OverlayWindow : Window
 
     private bool ShowsMeetingPill => phase == OverlayPhase.Hidden && meetingElapsed != null;
 
+    private bool ShowsOffer => phase == OverlayPhase.Hidden && offer != null;
+
+    /// Shows an offer in the bar (outside dictation) until it is used, dismissed or `lifetime` passes.
+    public void ShowOffer(string text, string actionLabel, string actionGlyph, TimeSpan lifetime, Action run, Action dismissed)
+    {
+        offer = new Offer(text, actionLabel, actionGlyph, run, dismissed);
+        hovering = false;
+        offerTimer.Stop();
+        offerTimer.Interval = lifetime;
+        offerTimer.Start();
+        Render();
+        Place();
+    }
+
+    public void ClearOffer()
+    {
+        offerTimer.Stop();
+        if (offer == null) return;
+        offer = null;
+        Render();
+        Place();
+    }
+
     public string Edge
     {
         get => edge;
@@ -180,7 +216,7 @@ public partial class OverlayWindow : Window
 
     private void SetHovering(bool value)
     {
-        if (phase != OverlayPhase.Hidden || dragging || hovering == value) return;
+        if (phase != OverlayPhase.Hidden || dragging || offer != null || hovering == value) return;
         hovering = value;
         Render();
         Place();
@@ -204,7 +240,8 @@ public partial class OverlayWindow : Window
     /// The bar's size for its state, or null when it should not be on screen.
     private Size? CurrentSize()
     {
-        // A meeting being recorded always shows, even with the idle bar off or snoozed.
+        // Offers and a meeting being recorded always show, even with the idle bar off or snoozed.
+        if (ShowsOffer) return Side ? OfferSide : OfferSize;
         if (ShowsMeetingPill) return Side ? MeetingPillSide : MeetingPill;
         if (phase == OverlayPhase.Hidden)
         {
@@ -223,7 +260,7 @@ public partial class OverlayWindow : Window
     private void Render()
     {
         meetingClocks.Clear();
-        bool idleHandle = phase == OverlayPhase.Hidden && !hovering && !ShowsMeetingPill;
+        bool idleHandle = phase == OverlayPhase.Hidden && !hovering && !ShowsMeetingPill && !ShowsOffer;
         Root.Background = Frozen(TintaColor, idleHandle ? 0.55 : 0.94);
         Root.BorderBrush = Frozen(OssoColor, idleHandle ? 0.25 : 0.14);
         Root.ToolTip = null;
@@ -233,7 +270,12 @@ public partial class OverlayWindow : Window
             bar.Fill = phase == OverlayPhase.Command ? Accent : Osso;
         }
 
-        if (ShowsMeetingPill)
+        if (ShowsOffer && offer is { } current)
+        {
+            Root.Child = Side ? OfferSideContent(current) : OfferContent(current);
+            if (Side) Root.ToolTip = current.Text;
+        }
+        else if (ShowsMeetingPill)
         {
             Root.Child = Side ? MeetingSideContent() : MeetingContent();
         }
@@ -281,6 +323,54 @@ public partial class OverlayWindow : Window
         stop.Margin = new Thickness(0, 5, 0, 0);
         column.Children.Add(stop);
         return column;
+    }
+
+    private UIElement OfferContent(Offer current)
+    {
+        var row = new DockPanel { Margin = new Thickness(14, 0, 6, 0), LastChildFill = true };
+        var dismiss = ActionButton("\uE711", Frozen(OssoColor, 0.12), "Dispensar", () => DismissOffer(current));
+        DockPanel.SetDock(dismiss, Dock.Right);
+        row.Children.Add(dismiss);
+        var run = TextButton(current.ActionLabel, () => RunOffer(current));
+        run.Margin = new Thickness(8, 0, 6, 0);
+        DockPanel.SetDock(run, Dock.Right);
+        row.Children.Add(run);
+        // A docked dot and a filling label, so a long app name trims instead of pushing the buttons out.
+        var left = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
+        var dot = RecordingDot();
+        DockPanel.SetDock(dot, Dock.Left);
+        left.Children.Add(dot);
+        var label = Text(current.Text, 13);
+        label.Margin = new Thickness(8, 0, 0, 0);
+        left.Children.Add(label);
+        row.Children.Add(left);
+        return row;
+    }
+
+    private UIElement OfferSideContent(Offer current)
+    {
+        var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var icon = Glyph("\uE716", Osso, 15);
+        column.Children.Add(icon);
+        var run = ActionButton(current.ActionGlyph, Accent, current.ActionLabel, () => RunOffer(current));
+        run.Margin = new Thickness(0, 10, 0, 0);
+        column.Children.Add(run);
+        var dismiss = ActionButton("\uE711", Frozen(OssoColor, 0.12), "Dispensar", () => DismissOffer(current));
+        dismiss.Margin = new Thickness(0, 8, 0, 0);
+        column.Children.Add(dismiss);
+        return column;
+    }
+
+    private void RunOffer(Offer current)
+    {
+        ClearOffer();
+        current.Run();
+    }
+
+    private void DismissOffer(Offer current)
+    {
+        ClearOffer();
+        current.Dismissed();
     }
 
     private static Ellipse RecordingDot() => new()
@@ -424,6 +514,39 @@ public partial class OverlayWindow : Window
             });
         }
         return row;
+    }
+
+    /// A primary text button sized for the 40-tall bar, with the same click handling as ActionButton.
+    private Border TextButton(string text, Action action)
+    {
+        var button = new Border
+        {
+            Height = 26, CornerRadius = new CornerRadius(6), Background = Accent, Cursor = Cursors.Hand,
+            Padding = new Thickness(10, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = text, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = Osso,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+        System.Windows.Automation.AutomationProperties.SetName(button, text);
+        Clickable(button, action);
+        return button;
+    }
+
+    /// Clicks on release, unless the press turned into a drag of the bar.
+    private void Clickable(Border button, Action action)
+    {
+        bool pressed = false;
+        button.MouseLeftButtonDown += (_, e) => { pressed = true; e.Handled = true; };
+        button.MouseLeave += (_, _) => pressed = false;
+        button.MouseLeftButtonUp += (_, e) =>
+        {
+            if (!pressed || dragging) return;
+            pressed = false;
+            e.Handled = true;
+            action();
+        };
     }
 
     /// A 26×26 button with 6 pt corners (concentric with the bar's 10). A press that turns into a drag never clicks.

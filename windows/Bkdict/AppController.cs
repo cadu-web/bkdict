@@ -44,6 +44,9 @@ public sealed class AppController
     private MeetingRecorder? meetingRecorder;
     private DateTime meetingStartedAt;
     private readonly DispatcherTimer meetingTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly MeetingDetector detector = new();
+    /// The call whose start offer was used or dismissed; a new call offers again.
+    private string? offeredCall;
 
     public void Start()
     {
@@ -53,6 +56,7 @@ public sealed class AppController
         recorder.LevelChanged += level => Application.Current.Dispatcher.InvokeAsync(() => overlay.Level = level);
         SetUpDictationBar();
         SetUpMeetings();
+        SetUpMeetingDetection();
         hotkey.OnAction = Handle;
         hotkey.IsRecording = () => session != null;
         hotkey.IsHandsFree = () => session?.HandsFree == true;
@@ -164,9 +168,33 @@ public sealed class AppController
         else StartMeeting();
     }
 
-    private void StartMeeting()
+    /// Offers to record when a call starts, and to stop when it ends (docs/reunioes.md, "Fase 2").
+    private void SetUpMeetingDetection()
     {
-        var meeting = Meeting.New(DateTimeOffset.Now);
+        detector.Enabled = () => model.DetectMeetings;
+        detector.CallStarted += app =>
+        {
+            if (model.RecordingMeeting != null || offeredCall == app) return;
+            offeredCall = app;
+            overlay.ShowOffer($"Reunião no {app}", "Gravar", "\uE7C8", TimeSpan.FromSeconds(20),
+                run: () => { if (model.RecordingMeeting == null) StartMeeting(app); },
+                dismissed: () => { });
+        };
+        detector.CallEnded += app =>
+        {
+            offeredCall = null;
+            overlay.ClearOffer();
+            if (model.RecordingMeeting is not { } recording) return;
+            overlay.ShowOffer($"A chamada no {app} acabou", "Parar e resumir", "\uE71A", TimeSpan.FromSeconds(30),
+                run: async () => { if (model.RecordingMeeting == recording) await StopMeetingAsync(recording); },
+                dismissed: () => { });
+        };
+        detector.Start();
+    }
+
+    private void StartMeeting(string? app = null)
+    {
+        var meeting = Meeting.New(DateTimeOffset.Now, app);
         var recording = new MeetingRecorder(meeting.MicPath, meeting.SystemPath);
         try
         {
@@ -181,6 +209,7 @@ public sealed class AppController
             return;
         }
         meeting.SystemAudio = recording.SystemAudio;
+        overlay.ClearOffer();
         MeetingStore.Save(meeting);
         meetingRecorder = recording;
         meetingStartedAt = DateTime.Now;
@@ -198,6 +227,7 @@ public sealed class AppController
         var recording = meetingRecorder;
         meetingRecorder = null;
         meetingTimer.Stop();
+        overlay.ClearOffer();
         model.RecordingMeeting = null;
         overlay.MeetingElapsed = null;
         tray?.SetMeetingRecording(false);
@@ -234,6 +264,7 @@ public sealed class AppController
 
     public void Shutdown()
     {
+        detector.Stop();
         // Quitting mid-meeting closes the files; the transcription runs on the next launch.
         if (meetingRecorder is { } recording && model.RecordingMeeting is { } meeting)
         {

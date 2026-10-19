@@ -35,6 +35,8 @@ public sealed class Meeting : ObservableObject
 
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
+    /// The call app it was recorded from, when started from a detected call ("Zoom", "Google Meet"…).
+    public string? App { get; set; }
     public DateTimeOffset StartedAt { get; set; }
 
     public double Duration
@@ -114,10 +116,11 @@ public sealed class Meeting : ObservableObject
         return builder.ToString().TrimEnd();
     }
 
-    public static Meeting New(DateTimeOffset now) => new()
+    public static Meeting New(DateTimeOffset now, string? app = null) => new()
     {
         Id = now.ToString("yyyy-MM-dd_HH-mm-ss"),
-        Title = $"Reunião de {now:dd/MM}, {now:HH:mm}",
+        Title = app == null ? $"Reunião de {now:dd/MM}, {now:HH:mm}" : $"{app} · {now:dd/MM}, {now:HH:mm}",
+        App = app,
         StartedAt = now,
     };
 }

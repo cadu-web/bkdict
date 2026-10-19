@@ -19,6 +19,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let recorder = AudioRecorder()
     private let overlay = OverlayWindow()
     @MainActor private lazy var meetings = MeetingCenter()
+    @MainActor private lazy var detector = MeetingDetector()
+    private var offerTimeout: DispatchWorkItem?
     private lazy var mainWindow = MainWindowController(model: model, meetings: MainActor.assumeIsolated { meetings })
     private let meetingItem = NSMenuItem(title: "Gravar reunião", action: nil, keyEquivalent: "")
     private let hotkey = HotkeyMonitor()
@@ -234,12 +236,57 @@ final class AppController: NSObject, NSApplicationDelegate {
             TextProcessor.apply(text, replacements: self?.model.replacements ?? [], snippets: [])
         }
         overlay.state.onToggleMeeting = { [weak self] in self?.toggleMeeting() }
+        overlay.state.onAcceptOffer = { [weak self] offer in
+            guard let self else { return }
+            self.clearOffer()
+            switch offer {
+            case .record(let app): self.meetings.start(app: app)
+            case .stop: self.meetings.stop()
+            }
+        }
+        // The detector reports each call once, so a dismissed offer does not come back for the same call.
+        overlay.state.onDismissOffer = { [weak self] in self?.clearOffer() }
+        detector.isEnabled = { [weak self] in self?.model.detectMeetings ?? false }
+        detector.onCallStarted = { [weak self] app in
+            guard let self else { return }
+            if self.meetings.recordingSince == nil { self.showOffer(.record(app: app), for: 20) }
+        }
+        detector.onCallEnded = { [weak self] app in
+            guard let self else { return }
+            if self.meetings.recordingSince != nil {
+                self.showOffer(.stop(app: app), for: 30)
+            } else if case .record = self.overlay.state.offer {
+                self.clearOffer()
+            }
+        }
+        detector.start()
         meetings.$recordingSince.sink { [weak self] since in
             self?.overlay.state.meetingSince = since
+            // Recording started some other way: the offer to record is moot.
+            if since != nil, case .record = self?.overlay.state.offer { self?.clearOffer() }
             self?.meetingItem.title = since == nil ? "Gravar reunião" : "Parar gravação da reunião"
             self?.overlay.layout()
         }
         .store(in: &subscriptions)
+    }
+
+    @MainActor
+    private func showOffer(_ offer: MeetingOffer, for seconds: TimeInterval) {
+        offerTimeout?.cancel()
+        overlay.state.offer = offer
+        overlay.layout()
+        let timeout = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.clearOffer() }
+        }
+        offerTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: timeout)
+    }
+
+    @MainActor
+    private func clearOffer() {
+        offerTimeout?.cancel()
+        overlay.state.offer = nil
+        overlay.layout()
     }
 
     @MainActor @objc private func toggleMeeting() {

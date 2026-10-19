@@ -17,6 +17,8 @@ struct Meeting: Codable, Identifiable, Hashable {
     var title: String
     let startedAt: Date
     var duration: TimeInterval = 0
+    /// The call app it was recorded from, when the Bkdict noticed the call (phase 2).
+    var app: String?
     var systemAudio = true
     var status = Status.recording
     var progress = 0.0
@@ -70,11 +72,13 @@ final class MeetingCenter: ObservableObject {
 
     // MARK: - Recording
 
-    func start() {
+    func start(app: String? = nil) {
         guard recording == nil else { return }
         let now = Date()
         let id = Self.idFormatter.string(from: now)
-        var meeting = Meeting(id: id, title: "Reunião de \(Self.titleFormatter.string(from: now))", startedAt: now)
+        let title = app.map { "\($0) · \(Self.titleFormatter.string(from: now))" } ?? "Reunião de \(Self.titleFormatter.string(from: now))"
+        var meeting = Meeting(id: id, title: title, startedAt: now)
+        meeting.app = app
         do {
             try FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
             let micFile = try WavFileWriter(url: meeting.micURL)
