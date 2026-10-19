@@ -298,6 +298,8 @@ private struct DictationRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
+        // The hovered row draws over its neighbors, so a button's balloon is not hidden under the row above.
+        .zIndex(hovering ? 1 : 0)
     }
 }
 
@@ -309,6 +311,7 @@ private struct RowAction: View {
     var destructive = false
     let action: () -> Void
     @State private var hovering = false
+    @State private var showsBalloon = false
 
     var body: some View {
         Button(action: action) {
@@ -323,9 +326,49 @@ private struct RowAction: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
         .accessibilityLabel(help)
-        .onHover { hovering = $0 }
+        .overlay(alignment: .top) {
+            if showsBalloon { Balloon(text: help).offset(y: -34).transition(.opacity.combined(with: .offset(y: 3))) }
+        }
+        .onHover { inside in
+            hovering = inside
+            if !inside { return withAnimation(.easeOut(duration: 0.1)) { showsBalloon = false } }
+            // A short wait, so sweeping the pointer across the row does not flash balloons.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                if hovering { withAnimation(.easeOut(duration: 0.15)) { showsBalloon = true } }
+            }
+        }
         .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// A small dark label above a button, pointing at it.
+private struct Balloon: View {
+    let text: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(text)
+                .font(Theme.body(11, .medium))
+                .foregroundStyle(Theme.onAccent)
+                .fixedSize()
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Color(hex: 0x0A0A0A)))
+            Triangle().fill(Color(hex: 0x0A0A0A)).frame(width: 10, height: 5)
+        }
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+            path.closeSubpath()
+        }
     }
 }
