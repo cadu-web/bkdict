@@ -4,13 +4,22 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-ARCHS=()
-[[ "${1:-}" == "--release" ]] && ARCHS=(--arch arm64 --arch x86_64)
-swift build -c release ${ARCHS[@]+"${ARCHS[@]}"}
 APP=dist/BKDict.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/Bkdict" "$APP/Contents/MacOS/Bkdict"
+if [[ "${1:-}" == "--release" ]]; then
+    # Universal: each architecture on its own and joined with lipo. `swift build --arch arm64 --arch x86_64`
+    # does it in one go, but needs the full Xcode (xcbuild); this works with the Command Line Tools too.
+    SLICES=()
+    for arch in arm64 x86_64; do
+        swift build -c release --triple "$arch-apple-macosx14.0"
+        SLICES+=("$(swift build -c release --triple "$arch-apple-macosx14.0" --show-bin-path)/Bkdict")
+    done
+    lipo -create "${SLICES[@]}" -output "$APP/Contents/MacOS/Bkdict"
+else
+    swift build -c release
+    cp "$(swift build -c release --show-bin-path)/Bkdict" "$APP/Contents/MacOS/Bkdict"
+fi
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp -R Resources/ProviderIcons "$APP/Contents/Resources/ProviderIcons"
 # Fontes da marca (IBM Plex, Zilla Slab), registradas pelo ATSApplicationFontsPath do Info.plist.
@@ -18,7 +27,8 @@ cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 cp Resources/MenuBarIcon.png Resources/MenuBarIcon@2x.png "$APP/Contents/Resources/"
 # Sparkle (atualização automática), achado pelo rpath @executable_path/../Frameworks do Package.swift.
 mkdir -p "$APP/Contents/Frameworks"
-cp -R "$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)/Sparkle.framework" "$APP/Contents/Frameworks/"
+# The framework is already universal, so either build has the same one.
+cp -R "$(swift build -c release --show-bin-path)/Sparkle.framework" "$APP/Contents/Frameworks/"
 
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$ICONSET"
