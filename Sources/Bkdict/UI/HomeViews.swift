@@ -243,6 +243,18 @@ struct DictationTimeline: View {
                 }
             }
         }
+        // Balloons are drawn here, above every card, so no card edge or neighbor row can cut them.
+        .overlayPreferenceValue(BalloonKey.self) { balloons in
+            GeometryReader { proxy in
+                ForEach(balloons, id: \.text) { balloon in
+                    let button = proxy[balloon.anchor]
+                    Balloon(text: balloon.text)
+                        .position(x: button.midX, y: button.minY - 6 - 29 / 2)
+                        .transition(.opacity)
+                }
+            }
+            .allowsHitTesting(false)
+        }
     }
 
     private static func title(for day: Date) -> String {
@@ -298,8 +310,6 @@ private struct DictationRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
-        // The hovered row draws over its neighbors, so a button's balloon is not hidden under the row above.
-        .zIndex(hovering ? 1 : 0)
     }
 }
 
@@ -327,9 +337,7 @@ private struct RowAction: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(help)
-        .overlay(alignment: .top) {
-            if showsBalloon { Balloon(text: help).offset(y: -34).transition(.opacity.combined(with: .offset(y: 3))) }
-        }
+        .anchorPreference(key: BalloonKey.self, value: .bounds) { showsBalloon ? [Balloon.Placed(text: help, anchor: $0)] : [] }
         .onHover { inside in
             hovering = inside
             if !inside { return withAnimation(.easeOut(duration: 0.1)) { showsBalloon = false } }
@@ -344,6 +352,11 @@ private struct RowAction: View {
 
 /// A small dark label above a button, pointing at it.
 private struct Balloon: View {
+    struct Placed {
+        let text: String
+        let anchor: Anchor<CGRect>
+    }
+
     let text: String
 
     var body: some View {
@@ -360,6 +373,12 @@ private struct Balloon: View {
         .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
         .allowsHitTesting(false)
     }
+}
+
+/// The balloons shown in the timeline, with the button each one points at.
+private struct BalloonKey: PreferenceKey {
+    static let defaultValue: [Balloon.Placed] = []
+    static func reduce(value: inout [Balloon.Placed], nextValue: () -> [Balloon.Placed]) { value += nextValue() }
 }
 
 private struct Triangle: Shape {
