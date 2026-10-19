@@ -292,13 +292,16 @@ enum SpeechDetector {
     private static let window = 480 // 30 ms at 16 kHz
     private static let windowSeconds = 0.03
 
-    /// Speech stretches by energy: louder than max(0.008, 3 × the track's median), joined across gaps under
-    /// 0.8 s, at least 0.4 s long, cut at 30 s, with 0.2 s of margin.
+    /// Speech stretches by energy: louder than max(0.008, min(3 × the 10th percentile, the 90th percentile / 2)),
+    /// joined across gaps under 0.8 s, at least 0.4 s long, cut at 30 s, with 0.2 s of margin. Percentiles, not the
+    /// median: on a track that is mostly speech (the others, in a lively call) the median falls inside the speech
+    /// and nothing would be detected.
     static func segments(in url: URL) -> [ClosedRange<TimeInterval>] {
         let levels = WavFileWriter.levels(in: url, window: window)
         guard !levels.isEmpty else { return [] }
-        let median = levels.sorted()[levels.count / 2]
-        let threshold = max(0.008, 3 * median)
+        let sorted = levels.sorted()
+        let floor = sorted[sorted.count / 10], loud = sorted[sorted.count * 9 / 10]
+        let threshold = max(0.008, min(3 * floor, loud / 2))
 
         var runs: [(start: Int, end: Int)] = []
         var start: Int?

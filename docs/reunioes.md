@@ -58,7 +58,8 @@ e não deve sincronizar com o perfil). `<id>` = data e hora `2026-10-18_14-05-12
 ## Transcrição
 
 1. **Trechos com fala (VAD por energia)**, por trilha: janelas de 30 ms; RMS acima de um limiar adaptativo
-   (`max(0.008, 3 × mediana do RMS da trilha)`) é fala. Juntar falas separadas por menos de 0,8 s; descartar
+   (`max(0.008, min(3 × percentil 10, percentil 90 / 2))` do RMS da trilha — com a mediana, uma trilha quase
+   toda falada não teria nenhum trecho detectado) é fala. Juntar falas separadas por menos de 0,8 s; descartar
    trechos com menos de 0,4 s; cortar trechos maiores que 30 s no silêncio mais próximo (ou em 30 s). Margem de
    0,2 s antes e depois.
 2. **Transcrever cada trecho** com o motor escolhido (whisper local ou API), com o vocabulário do Dicionário como
