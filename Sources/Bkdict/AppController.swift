@@ -309,8 +309,13 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
 
                 model.add(Dictation(date: Date(), text: text, duration: duration))
-                overlay.show(.hidden)
-                TextInserter.insert(text)
+                // Like a person would, paste only into a text box; otherwise keep it for the paste shortcut.
+                if TextInserter.focusedTarget() == .notEditable {
+                    showTip(pasteTip)
+                } else {
+                    overlay.show(.hidden)
+                    TextInserter.insert(text)
+                }
             } catch {
                 flashError(Self.message(for: error))
                 NSLog("Bkdict: \(error.localizedDescription)")
@@ -349,6 +354,19 @@ final class AppController: NSObject, NSApplicationDelegate {
             text = (try? await LLM.transform(text, with: transform.prompt)) ?? text
         }
         return TextProcessor.apply(text, replacements: model.replacements, snippets: model.snippets)
+    }
+
+    private var pasteTip: String {
+        let keys = model.keys(for: .pasteLast)
+        return keys.isEmpty ? "Ditado guardado: clique num campo de texto e cole pelo menu da barra"
+                            : "Clique num campo de texto e use \(keys.joined(separator: " ")) para colar"
+    }
+
+    private func showTip(_ message: String) {
+        overlay.show(.tip(message))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            if case .tip = self?.overlay.state.phase { self?.overlay.show(.hidden) }
+        }
     }
 
     private func flashError(_ message: String) {

@@ -21,6 +21,8 @@ final class OverlayState: ObservableObject {
         case hidden, listening, handsFree, command, transcribing, polishing, thinking
         case transforming(String)
         case error(String)
+        /// Guidance rather than a failure, e.g. where a dictation went when it could not be pasted.
+        case tip(String)
     }
 
     @Published var phase: Phase = .hidden
@@ -70,6 +72,7 @@ final class OverlayWindow {
         static let hovered = NSSize(width: 168, height: 36)
         static let recording = NSSize(width: 300, height: 40)
         static let busy = NSSize(width: 260, height: 40)
+        static let tip = NSSize(width: 380, height: 40)
         // On a side the whole bar stands up.
         static let hoveredSide = NSSize(width: 52, height: 112)
         static let recordingSide = NSSize(width: 40, height: 104)
@@ -146,6 +149,8 @@ final class OverlayWindow {
             return side ? Size.idleSide : Size.idle
         case .listening, .handsFree, .command:
             return side ? Size.recordingSide : Size.recording
+        case .tip:
+            return side ? Size.busySide : Size.tip
         default:
             return side ? Size.busySide : Size.busy
         }
@@ -300,14 +305,7 @@ private struct BarView: View {
     }
 
     private var busySide: some View {
-        Group {
-            if case .error = state.phase {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.accentOnTinta)
-            } else {
-                ProgressView().controlSize(.small).tint(Theme.onAccent)
-            }
-        }
-        .help(label)
+        statusIcon.help(label)
     }
 
     /// Hovered idle bar: what dictates, and a button that starts hands-free.
@@ -340,17 +338,24 @@ private struct BarView: View {
 
     private var busy: some View {
         HStack(spacing: 10) {
-            if case .error = state.phase {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.accentOnTinta)
-            } else {
-                ProgressView().controlSize(.small).tint(Theme.onAccent)
-            }
+            statusIcon
             Text(label)
                 .font(Theme.body(13, .medium))
                 .foregroundStyle(Theme.onAccent)
                 .lineLimit(1)
         }
         .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder private var statusIcon: some View {
+        switch state.phase {
+        case .error:
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.accentOnTinta)
+        case .tip:
+            Image(systemName: "text.cursor").foregroundStyle(Theme.onAccent)
+        default:
+            ProgressView().controlSize(.small).tint(Theme.onAccent)
+        }
     }
 
     private var waveform: some View {
@@ -374,7 +379,7 @@ private struct BarView: View {
         case .transcribing: return "Transcrevendo…"
         case .polishing: return "Ajustando texto…"
         case .transforming(let name): return "\(name)…"
-        case .error(let message): return message
+        case .error(let message), .tip(let message): return message
         case .hidden: return ""
         }
     }
