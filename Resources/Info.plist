@@ -21,7 +21,7 @@
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>NSHumanReadableCopyright</key>
-    <string>© 2026 BKDG. Todos os direitos reservados.</string>
+    <string>© 2026 BKDG. Licença MIT.</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <!-- Atualização automática (Sparkle): o appcast sai com cada release de scripts/release.sh, e a chave pública

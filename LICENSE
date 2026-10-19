@@ -1,45 +1,21 @@
-Bkdict
-Copyright (c) 2026 BKDG. Todos os direitos reservados.
+MIT License
 
-LICENÇA DE USO PROPRIETÁRIA
+Copyright (c) 2026 BKDG
 
-1. Objeto. Este software, incluindo o código-fonte, o código compilado, a
-   documentação, os ícones, as imagens e demais arquivos deste repositório
-   ("Software"), é de propriedade da BKDG, exceto pelos componentes de
-   terceiros listados na seção "Componentes de terceiros" abaixo, que
-   continuam regidos pelas próprias licenças.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-2. Uso permitido. O Software só pode ser usado, copiado, modificado ou
-   compilado por pessoas e organizações autorizadas pela BKDG por escrito, e
-   apenas dentro dos limites dessa autorização.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-3. Restrições. Sem autorização prévia e por escrito da BKDG, é proibido:
-   a) distribuir, publicar, sublicenciar, vender, alugar ou ceder o Software,
-      no todo ou em parte, em forma de código-fonte ou compilada;
-   b) disponibilizar o Software, ou obra derivada dele, a terceiros, inclusive
-      como serviço;
-   c) remover ou alterar avisos de direitos autorais, de marca ou de licença.
-
-4. Marcas. "BKDG", "Bkdict", o símbolo O Observador e a identidade visual da
-   BKDG são marcas e sinais distintivos da BKDG. Esta licença não concede
-   nenhum direito sobre eles.
-
-5. Garantia. O SOFTWARE É FORNECIDO "NO ESTADO EM QUE SE ENCONTRA", SEM
-   GARANTIA DE QUALQUER TIPO, EXPRESSA OU IMPLÍCITA, INCLUINDO, SEM SE
-   LIMITAR A, GARANTIAS DE COMERCIALIZAÇÃO, ADEQUAÇÃO A UM FIM ESPECÍFICO E
-   NÃO VIOLAÇÃO. EM NENHUMA HIPÓTESE A BKDG SERÁ RESPONSÁVEL POR QUALQUER
-   REIVINDICAÇÃO, DANO OU OUTRA RESPONSABILIDADE DECORRENTE DO SOFTWARE, DE
-   SEU USO OU DE OUTRAS OPERAÇÕES COM ELE, NA MEDIDA MÁXIMA PERMITIDA PELA LEI
-   APLICÁVEL.
-
-6. Lei aplicável. Esta licença é regida pelas leis da República Federativa do
-   Brasil.
-
-Pedidos de autorização: BKDG, cadu@bkdg.co.
-
-Fontes IBM Plex Sans, IBM Plex Mono e Zilla Slab (Resources/Fonts): SIL Open
-Font License 1.1. Os textos completos estão em Resources/Fonts/OFL-IBMPlex.txt
-e Resources/Fonts/OFL-ZillaSlab.txt, e acompanham o app.
-
-Os logotipos dos provedores em Resources/ProviderIcons são marcas de seus
-respectivos titulares e aparecem só para identificar cada serviço.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

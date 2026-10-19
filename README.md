@@ -227,6 +227,6 @@ Ao trocar a versão do whisper.cpp, mude `WHISPER_VERSION` no script, publique n
 
 ## Licença
 
-Copyright (c) 2026 BKDG. Todos os direitos reservados. O BKDict é software proprietário: uso, cópia, modificação e distribuição só com autorização da BKDG. Os termos estão em [`LICENSE`](LICENSE).
+[MIT](LICENSE), copyright (c) 2026 BKDG. A licença cobre o código; os nomes BKDG e BKDict, o símbolo e a identidade visual continuam marcas da BKDG.
 
-Avisos de componentes de terceiros também estão no `LICENSE`. As fontes IBM Plex e Zilla Slab são distribuídas sob a SIL Open Font License (`Resources/Fonts/OFL-*.txt`).
+Os avisos de componentes de terceiros estão no [`NOTICE`](NOTICE). As fontes IBM Plex e Zilla Slab são distribuídas sob a SIL Open Font License (`Resources/Fonts/OFL-*.txt`).

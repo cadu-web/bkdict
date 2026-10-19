@@ -1,0 +1,15 @@
+BKDict
+Copyright (c) 2026 BKDG. Código sob a licença MIT (arquivo LICENSE).
+
+Marcas
+"BKDG", "BKDict", o símbolo O Observador e a identidade visual da BKDG são marcas
+e sinais distintivos da BKDG. A licença MIT cobre o código; ela não concede
+direito de usar esses nomes ou sinais, por exemplo para identificar uma versão
+modificada ou distribuída por terceiros.
+
+Componentes de terceiros
+- Fontes IBM Plex Sans, IBM Plex Mono e Zilla Slab (Resources/Fonts): SIL Open
+  Font License 1.1. Os textos completos estão em Resources/Fonts/OFL-IBMPlex.txt
+  e Resources/Fonts/OFL-ZillaSlab.txt, e acompanham o app.
+- Os logotipos dos provedores em Resources/ProviderIcons são marcas de seus
+  respectivos titulares e aparecem só para identificar cada serviço.
