@@ -10,13 +10,11 @@ using Bkdict.Platform;
 
 namespace Bkdict.UI;
 
-/// "Ditar Shift dir. →" beside the hovered bar on a side, pointing at it, level with the microphone. It never takes focus or
+/// "Ditar Shift dir. →" or "Gravar reunião →" beside the side bar's hovered button, pointing at it. It never takes focus or
 /// the mouse (WS_EX_TRANSPARENT), so the bar under the cursor keeps its hover.
 internal sealed class HintWindow : Window
 {
     private const double Gap = 8, HintHeight = 34;
-    /// The microphone's center, from the bar's top: 6 px padding + half of the 26 px button.
-    private const double MicCenter = 19;
     private static readonly Color Osso = Color.FromRgb(0xF1, 0xEC, 0xE2);
     private static readonly Color Tinta = Color.FromRgb(0x0A, 0x0A, 0x0A);
 
@@ -57,14 +55,15 @@ internal sealed class HintWindow : Window
         return brush;
     }
 
-    /// `bar` is the bar's rectangle in physical pixels; the hint goes on its inner side, the arrow toward it.
-    public void ShowBeside(Rect bar, string edge, double scale, IReadOnlyList<string> keys)
+    /// `bar` is the bar's rectangle in physical pixels; the hint goes on its inner side, the arrow toward it, level with the
+    /// button whose center is `centerFromTop` (in DIPs) below the bar's top.
+    public void ShowBeside(Rect bar, string edge, double scale, double centerFromTop, string title, IReadOnlyList<string> keys)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         if (edge == OverlayWindow.Edges.Left) row.Children.Add(Arrow("←", new Thickness(0, 0, 8, 0)));
         row.Children.Add(new TextBlock
         {
-            Text = "Ditar", FontSize = 13, FontWeight = FontWeights.Medium, Foreground = Brush(Osso),
+            Text = title, FontSize = 13, FontWeight = FontWeights.Medium, Foreground = Brush(Osso),
             VerticalAlignment = VerticalAlignment.Center,
         });
         if (keys.Count > 0) row.Children.Add(OverlayWindow.KeyCaps(keys, new Thickness(8, 0, 0, 0)));
@@ -74,7 +73,7 @@ internal sealed class HintWindow : Window
         root.Measure(new Size(double.PositiveInfinity, HintHeight));
         double w = Math.Ceiling(root.DesiredSize.Width * scale), h = Math.Round(HintHeight * scale), gap = Math.Round(Gap * scale);
         double x = edge == OverlayWindow.Edges.Right ? bar.X - gap - w : bar.Right + gap;
-        double y = Math.Round(bar.Y + MicCenter * scale - h / 2);
+        double y = Math.Round(bar.Y + centerFromTop * scale - h / 2);
         bool appearing = !IsVisible;
         if (appearing)
         {
