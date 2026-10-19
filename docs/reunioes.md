@@ -127,10 +127,11 @@ Uma chamada está acontecendo quando **um app de reunião está usando o microfo
 ## O que a pessoa vê
 
 - **Começou e não está gravando**: a barra (fora do ditado) vira um convite por 20 s:
-  `● Reunião no Zoom   [Gravar]  ×` — embaixo 360×40; nas laterais em pé 52×112 (ícone, botão gravar, ×; o texto
-  como dica). "Gravar" começa a gravação com o título `Zoom · 18/10, 14:05`. "×" ou o tempo esgotado dispensam o
+  `● Reunião no Zoom   [Gravar]  ×` — 360×40, embaixo ou encostado na lateral. "Gravar" começa a gravação com o título `Zoom · 18/10, 14:05`. "×" ou o tempo esgotado dispensam o
   convite **para esta chamada** (uma nova chamada convida de novo).
 - **Acabou e está gravando**: convite `A chamada no Zoom acabou   [Parar e resumir]  ×` (mesmos tamanhos), por 30 s.
+- **Nas laterais**, os dois convites são o mesmo cartão deitado de 360×40, encostado na borda, para o nome da
+  reunião aparecer; só os outros estados da barra ficam em pé.
   "×" continua gravando. Gravações iniciadas à mão também recebem o convite quando a chamada que estava ativa acaba.
 - Ajustes: linha "Detectar reuniões" — "Oferece gravar quando uma chamada começa no Zoom, Teams, Meet e outros".
 
