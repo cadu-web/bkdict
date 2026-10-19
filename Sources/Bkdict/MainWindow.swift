@@ -91,7 +91,7 @@ struct MainView: View {
                 switch section {
                 case .home: HomeView(model: model, showHistory: { section = .history }, showModels: { section = .models })
                 case .history: HistoryView(model: model)
-                case .meetings: MeetingsView(meetings: meetings)
+                case .meetings: MeetingsView(meetings: meetings, model: model, openSettings: { section = .settings })
                 case .transforms: TransformsView(model: model)
                 case .dictionary: DictionaryView(model: model)
                 case .snippets: SnippetsView(model: model)

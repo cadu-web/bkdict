@@ -8,6 +8,27 @@ enum MeetingSearch {
         "sobre", "isso", "essa", "esse", "quem", "qual", "quando", "onde", "reuniao", "reunioes",
     ]
 
+    /// "hoje", "ontem", "semana" (last 7 days) or "mes" (last 30): every meeting of the period, summaries only.
+    private static func period(in terms: Set<String>, now: Date) -> (start: Date, end: Date)? {
+        let today = Calendar.current.startOfDay(for: now)
+        let tomorrow = today.addingTimeInterval(86_400)
+        if terms.contains("ontem") { return (today.addingTimeInterval(-86_400), today) }
+        if terms.contains("hoje") { return (today, tomorrow) }
+        if terms.contains("semana") { return (today.addingTimeInterval(-6 * 86_400), tomorrow) }
+        if terms.contains("mes") { return (today.addingTimeInterval(-29 * 86_400), tomorrow) }
+        return nil
+    }
+
+    private static func summaries(of meetings: [Meeting]) -> String {
+        let dates = DateFormatter()
+        dates.locale = Locale(identifier: "pt_BR")
+        dates.dateFormat = "dd/MM/yyyy HH:mm"
+        guard !meetings.isEmpty else { return "Nenhuma reunião gravada nesse período." }
+        let blocks = meetings.sorted { $0.startedAt > $1.startedAt }
+            .map { "### \($0.title) (\(dates.string(from: $0.startedAt)))\n\($0.summary ?? "")" }
+        return String(blocks.joined(separator: "\n\n").prefix(8_000))
+    }
+
     static func words(_ text: String) -> [String] {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
@@ -17,9 +38,12 @@ enum MeetingSearch {
     /// The context for the question, up to 8,000 characters: for the 3 meetings with the most hits (or the 3 most
     /// recent, summaries only, when nothing matches), the title, date, summary and matching lines with a line of
     /// context on each side.
-    static func context(for question: String, in meetings: [Meeting]) -> String {
+    static func context(for question: String, in meetings: [Meeting], now: Date = Date()) -> String {
         let terms = Set(words(question))
         let usable = meetings.filter { $0.status == .ready }
+        if let since = period(in: terms, now: now) {
+            return summaries(of: usable.filter { $0.startedAt >= since.start && $0.startedAt < since.end })
+        }
         let scored = usable.map { meeting -> (Meeting, Int) in
             let haystack = words([meeting.title, meeting.summary ?? "", meeting.transcript].joined(separator: " "))
             return (meeting, haystack.filter(terms.contains).count)

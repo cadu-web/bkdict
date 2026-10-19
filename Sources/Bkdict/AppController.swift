@@ -248,13 +248,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         overlay.state.onDismissOffer = { [weak self] in self?.clearOffer() }
         detector.isEnabled = { [weak self] in self?.model.detectMeetings ?? false }
         detector.onCallStarted = { [weak self] app in
-            guard let self else { return }
-            if self.meetings.recordingSince == nil { self.showOffer(.record(app: app), for: 20) }
+            guard let self, self.meetings.recordingSince == nil else { return }
+            if self.model.autoRecordMeetings {
+                self.meetings.start(app: app)
+            } else {
+                self.showOffer(.record(app: app), for: 20)
+            }
         }
         detector.onCallEnded = { [weak self] app in
             guard let self else { return }
             if self.meetings.recordingSince != nil {
-                self.showOffer(.stop(app: app), for: 30)
+                if self.model.autoRecordMeetings { self.meetings.stop() } else { self.showOffer(.stop(app: app), for: 30) }
             } else if case .record = self.overlay.state.offer {
                 self.clearOffer()
             }

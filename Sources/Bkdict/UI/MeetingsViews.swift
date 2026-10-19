@@ -5,18 +5,21 @@ import SwiftUI
 /// Meetings: record one, then read its summary and its transcript (Você / Eles).
 struct MeetingsView: View {
     @ObservedObject var meetings: MeetingCenter
-    @State private var selected: String?
+    @ObservedObject var model: AppModel
+    let openSettings: () -> Void
+    @State private var opened: String?
     @State private var startTab = MeetingDetail.Tab.summary
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            if let id = selected, let meeting = meetings.meetings.first(where: { $0.id == id }) {
+            if let id = opened, let meeting = meetings.meetings.first(where: { $0.id == id }) {
                 MeetingDetail(meetings: meetings, meeting: meeting, startTab: startTab, open: { open($0, tab: .transcript) }) { open(nil) }
                     .id(id + startTab.rawValue)
                     .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             } else {
-                MeetingList(meetings: meetings, open: { open($0) }, openTranscript: { open($0, tab: .transcript) })
+                MeetingHome(meetings: meetings, model: model, calendar: meetings.calendar, openSettings: openSettings,
+                            open: { open($0) }, openTranscript: { open($0, tab: .transcript) })
                     .transition(.opacity)
             }
         }
@@ -25,48 +28,443 @@ struct MeetingsView: View {
     private func open(_ id: String?, tab: MeetingDetail.Tab = .summary) {
         withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.9)) {
             startTab = tab
-            selected = id
+            opened = id
         }
     }
 }
 
-// MARK: - List
+// MARK: - Home
 
-private struct MeetingList: View {
+/// The meetings home (docs/reunioes.md, screen v3): header, the auto-record banner, today's calendar, past
+/// meetings by day, a question bar at the bottom and a preview of the selected meeting on the right.
+private struct MeetingHome: View {
     @ObservedObject var meetings: MeetingCenter
+    @ObservedObject var model: AppModel
+    @ObservedObject var calendar: MeetingCalendar
+    let openSettings: () -> Void
     let open: (String) -> Void
     let openTranscript: (String) -> Void
+    @State private var selected: String?
+    @State private var searching = false
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
+
+    private var hasReady: Bool { meetings.meetings.contains { $0.status == .ready } }
+    private var preview: Meeting? {
+        selected.flatMap { id in meetings.meetings.first { $0.id == id } } ?? meetings.meetings.first
+    }
 
     var body: some View {
-        Page {
-            HStack(alignment: .bottom) {
-                PageHeader(title: "Reuniões",
-                           subtitle: "Grava o seu microfone e o áudio do computador, transcreve e resume. Tudo fica neste Mac.")
-                Spacer()
-                if meetings.recordingSince == nil {
-                    Button { meetings.start() } label: { Label("Gravar reunião", systemImage: "record.circle") }
-                        .buttonStyle(PrimaryButtonStyle())
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                ZStack(alignment: .bottom) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            header
+                            if !model.autoRecordMeetings && !model.autoRecordAsked { autoRecordBanner }
+                            if let since = meetings.recordingSince {
+                                RecordingBanner(since: since) { meetings.stop() }
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                            TodayCard(meetings: meetings, calendar: calendar, connect: openSettings)
+                            past
+                        }
+                        .padding(.horizontal, 36)
+                        .padding(.top, 40)
+                        .padding(.bottom, hasReady ? 120 : 40)
+                        .frame(maxWidth: 720)
+                        .frame(maxWidth: .infinity)
+                    }
+                    if hasReady {
+                        AskBox(meetings: meetings, scope: nil, open: openTranscript, floating: true)
+                            .padding(.horizontal, 36)
+                            .padding(.bottom, 18)
+                            .frame(maxWidth: 720)
+                    }
+                }
+                if geometry.size.width > 740 {
+                    Rectangle().fill(Theme.border).frame(width: 1)
+                    PreviewPane(meeting: preview, open: open)
+                        .frame(width: 280)
                 }
             }
-            if let since = meetings.recordingSince {
-                RecordingBanner(since: since) { meetings.stop() }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+        .background(Theme.background)
+        .animation(.easeOut(duration: 0.2), value: meetings.recordingSince)
+        .animation(.easeOut(duration: 0.2), value: model.autoRecordAsked)
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("Reuniões")
+                .font(Theme.display(34))
+                .foregroundStyle(Theme.text)
+            Spacer()
+            IconButton(help: "Ajustes de reuniões e calendário", systemImage: "gearshape", action: openSettings)
+            if meetings.recordingSince == nil {
+                Button { meetings.start() } label: { Label("Gravar reunião", systemImage: "record.circle") }
+                    .buttonStyle(PrimaryButtonStyle())
             }
-            if meetings.meetings.contains(where: { $0.status == .ready }) {
-                AskBox(meetings: meetings, scope: nil, open: openTranscript)
+        }
+    }
+
+    private var autoRecordBanner: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "record.circle")
+                .font(.system(size: 17))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 40, height: 40)
+                .background(Circle().strokeBorder(Theme.border))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Quer que o Bkdict grave sozinho?")
+                    .font(Theme.body(14, .semibold))
+                    .foregroundStyle(Theme.text)
+                Text("Começa a gravar assim que a chamada começa e para quando ela acaba.")
+                    .font(Theme.body(13))
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 8)
+            Button("Agora não") { model.autoRecordAsked = true }
+                .buttonStyle(.plain)
+                .font(Theme.body(13, .medium))
+                .foregroundStyle(Theme.text)
+            Button("Ativar") {
+                model.detectMeetings = true
+                model.autoRecordMeetings = true
+                model.autoRecordAsked = true
+            }
+            .buttonStyle(SecondaryButtonStyle())
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
+        .transition(.opacity)
+    }
+
+    // MARK: Past
+
+    private var filtered: [Meeting] {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return meetings.meetings }
+        return meetings.meetings.filter { meeting in
+            [meeting.title, meeting.summary ?? "", meeting.transcript].contains { $0.localizedCaseInsensitiveContains(text) }
+        }
+    }
+
+    private var past: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .bottom) {
+                VStack(spacing: 7) {
+                    Text("Anteriores").font(Theme.body(14, .semibold)).foregroundStyle(Theme.text)
+                    Rectangle().fill(Theme.accent).frame(height: 2)
+                }
+                .fixedSize()
+                Spacer()
+                if searching {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(Theme.secondary)
+                        TextField("Buscar nas reuniões", text: $query)
+                            .textFieldStyle(.plain)
+                            .focused($searchFocused)
+                            .frame(width: 200)
+                            .onExitCommand { closeSearch() }
+                        Button(action: closeSearch) { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
+                    .transition(.opacity)
+                } else {
+                    IconButton(help: "Buscar", systemImage: "magnifyingglass") {
+                        searching = true
+                        searchFocused = true
+                    }
+                }
+            }
+            .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1).offset(y: 0.5) }
+            .animation(.easeOut(duration: 0.15), value: searching)
+
             if meetings.meetings.isEmpty {
-                EmptyMeetings()
+                Text("Nenhuma reunião gravada ainda. Use Gravar reunião quando a chamada começar.")
+                    .foregroundStyle(Theme.secondary)
+                    .padding(.vertical, 8)
+            } else if filtered.isEmpty {
+                Text("Nada encontrado para \u{201C}\(query)\u{201D}.").foregroundStyle(Theme.secondary)
             } else {
-                VStack(spacing: 8) {
-                    ForEach(meetings.meetings) { meeting in
-                        MeetingCard(meeting: meeting) { open(meeting.id) }
+                ForEach(days(filtered), id: \.day) { group in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(Self.dayLabel(group.day))
+                            .font(Theme.mono(10, .medium)).tracking(0.8)
+                            .foregroundStyle(Theme.secondary)
+                            .padding(.leading, 6)
+                            .padding(.bottom, 2)
+                        ForEach(group.meetings) { meeting in
+                            PastRow(meeting: meeting, selected: preview?.id == meeting.id,
+                                    select: { selected = meeting.id }, open: { open(meeting.id) })
+                        }
                     }
                 }
             }
         }
-        .animation(.easeOut(duration: 0.2), value: meetings.recordingSince)
     }
+
+    private func closeSearch() {
+        query = ""
+        searching = false
+    }
+
+    private func days(_ meetings: [Meeting]) -> [(day: Date, meetings: [Meeting])] {
+        let groups = Dictionary(grouping: meetings) { Calendar.current.startOfDay(for: $0.startedAt) }
+        return groups.keys.sorted(by: >).map { ($0, groups[$0]!.sorted { $0.startedAt > $1.startedAt }) }
+    }
+
+    static func dayLabel(_ day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "HOJE" }
+        if calendar.isDateInYesterday(day) { return "ONTEM" }
+        return dayFormatter.string(from: day).uppercased().replacingOccurrences(of: ".", with: "")
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.dateFormat = "EEE, d 'de' MMM"
+        return formatter
+    }()
+}
+
+/// Today's calendar events, with Gravar on the one going on now.
+private struct TodayCard: View {
+    @ObservedObject var meetings: MeetingCenter
+    @ObservedObject var calendar: MeetingCalendar
+    let connect: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            VStack(alignment: .leading, spacing: 14) {
+                Text("HOJE")
+                    .font(Theme.mono(10, .medium)).tracking(0.8)
+                    .foregroundStyle(Theme.secondary)
+                if !calendar.isConfigured {
+                    VStack(spacing: 12) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 26, weight: .light))
+                            .foregroundStyle(Theme.secondary)
+                        Text("Nenhuma reunião encontrada")
+                            .font(Theme.display(18))
+                            .foregroundStyle(Theme.secondary)
+                        Button("Conectar calendário", action: connect)
+                            .buttonStyle(PrimaryButtonStyle())
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                } else {
+                    let events = calendar.todayEvents(at: context.date)
+                    if events.isEmpty {
+                        Text("Nenhuma reunião hoje no calendário.")
+                            .foregroundStyle(Theme.secondary)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(Array(events.enumerated()), id: \.offset) { index, event in
+                                eventRow(event, now: context.date)
+                                if index < events.count - 1 { Divider().overlay(Theme.border) }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.sidebar))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
+        }
+    }
+
+    private func eventRow(_ event: CalendarEvent, now: Date) -> some View {
+        let happening = event.start <= now.addingTimeInterval(10 * 60) && event.end > now
+        return HStack(spacing: 14) {
+            Text(Self.time.string(from: event.start))
+                .font(Theme.mono(12, .medium))
+                .foregroundStyle(happening ? Theme.accent : Theme.secondary)
+                .frame(width: 44, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.title).font(Theme.body(14, .medium)).foregroundStyle(Theme.text).lineLimit(1)
+                if !event.attendees.isEmpty {
+                    Text(event.attendees.count == 1 ? "1 convidado" : "\(event.attendees.count) convidados")
+                        .font(Theme.body(12))
+                        .foregroundStyle(Theme.secondary)
+                }
+            }
+            Spacer()
+            if happening {
+                if meetings.recordingSince != nil {
+                    Text("Gravando").font(Theme.mono(10, .medium)).tracking(0.8).textCase(.uppercase).foregroundStyle(Theme.accent)
+                } else {
+                    Button { meetings.start() } label: { Label("Gravar", systemImage: "record.circle") }
+                        .buttonStyle(SecondaryButtonStyle())
+                }
+            }
+        }
+        .padding(.vertical, 10)
+        .opacity(event.end < now ? 0.5 : 1)
+    }
+
+    private static let time: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
+}
+
+private struct PastRow: View {
+    let meeting: Meeting
+    let selected: Bool
+    let select: () -> Void
+    let open: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.secondary)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.hover))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(meeting.title)
+                    .font(Theme.body(14, .medium))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Text(meeting.status == .recording ? Self.time.string(from: meeting.startedAt)
+                     : "\(Self.time.string(from: meeting.startedAt)) · \(Meeting.clock(meeting.duration))")
+                    .font(Theme.body(12))
+                    .foregroundStyle(Theme.secondary)
+            }
+            Spacer()
+            if meeting.status != .ready { StatusPill(meeting: meeting) }
+            if hovering || selected {
+                Button("Abrir", action: open)
+                    .buttonStyle(.plain)
+                    .font(Theme.body(12, .medium))
+                    .foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(selected ? Theme.hover : hovering ? Theme.hover.opacity(0.5) : .clear))
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: open)
+        .onTapGesture(perform: select)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+
+    private static let time: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
+}
+
+/// The selected meeting at a glance: overview, who took part, tasks.
+private struct PreviewPane: View {
+    let meeting: Meeting?
+    let open: (String) -> Void
+
+    var body: some View {
+        ScrollView {
+            if let meeting {
+                let summary = meeting.summary.map(MeetingSummary.init(markdown:))
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(meeting.title)
+                            .font(Theme.display(22))
+                            .foregroundStyle(Theme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(Self.when.string(from: meeting.startedAt).replacingOccurrences(of: " às ", with: " • "))
+                            .font(Theme.body(13))
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    Rectangle().fill(Theme.border).frame(height: 1)
+
+                    section("VISÃO GERAL") {
+                        if let overview = summary?.overview, !overview.isEmpty {
+                            Text(overview.joined(separator: " "))
+                                .font(Theme.body(13))
+                                .lineSpacing(3)
+                                .foregroundStyle(Theme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text(meeting.status == .ready ? "Sem resumo." : "O resumo sai quando o processamento terminar.")
+                                .font(Theme.body(13))
+                                .foregroundStyle(Theme.secondary)
+                        }
+                    }
+
+                    section("PARTICIPANTES") {
+                        FlowLayout(spacing: 6) {
+                            chip("Você", color: Theme.accent)
+                            if let voices = meeting.speakers, !voices.isEmpty {
+                                ForEach(0..<voices.count, id: \.self) { voice in
+                                    chip(meeting.name(of: voice), color: VoiceColors.color(voice))
+                                }
+                            } else if let attendees = meeting.attendees, !attendees.isEmpty {
+                                ForEach(attendees, id: \.self) { chip($0, color: Theme.secondary) }
+                            } else if meeting.systemAudio {
+                                chip("Participantes", color: Theme.secondary)
+                            }
+                        }
+                    }
+
+                    if let tasks = summary?.tasks, !tasks.isEmpty {
+                        section("TAREFAS") {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(tasks.prefix(5), id: \.self) { task in
+                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                        Text("–").foregroundStyle(Theme.accent)
+                                        Text(task.line)
+                                            .font(Theme.body(13))
+                                            .foregroundStyle((meeting.doneTasks ?? []).contains(task.line) ? Theme.secondary : Theme.text)
+                                            .strikethrough((meeting.doneTasks ?? []).contains(task.line))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Button("Abrir reunião") { open(meeting.id) }
+                        .buttonStyle(SecondaryButtonStyle())
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text("As reuniões gravadas aparecem aqui.")
+                    .foregroundStyle(Theme.secondary)
+                    .padding(24)
+            }
+        }
+        .background(Theme.background)
+    }
+
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(Theme.mono(10, .medium)).tracking(0.8).foregroundStyle(Theme.secondary)
+            content()
+        }
+    }
+
+    private func chip(_ name: String, color: Color) -> some View {
+        Text(name)
+            .font(Theme.body(12, .medium))
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(color.opacity(0.12)))
+    }
+
+    private static let when: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.dateFormat = "EEEE 'às' HH:mm"
+        return formatter
+    }()
 }
 
 private struct RecordingBanner: View {
@@ -98,106 +496,6 @@ private struct RecordingBanner: View {
         .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.accentTint))
         .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.accent.opacity(0.35)))
     }
-}
-
-private struct EmptyMeetings: View {
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "video")
-                .font(.system(size: 28))
-                .foregroundStyle(Theme.accent)
-            Text("Nenhuma reunião gravada")
-                .font(Theme.display(20))
-                .foregroundStyle(Theme.text)
-            Text("Comece a gravar quando a chamada começar. Ao parar, o Bkdict separa o que você disse do que os outros disseram e faz o resumo.")
-                .foregroundStyle(Theme.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 440)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 44)
-        .card()
-    }
-}
-
-private struct MeetingCard: View {
-    let meeting: Meeting
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                DateTile(date: meeting.startedAt)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(meeting.title)
-                        .font(Theme.body(14, .medium))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    HStack(spacing: 10) {
-                        Text(Self.time.string(from: meeting.startedAt))
-                        if meeting.status != .recording { Text("·"); Text(Meeting.clock(meeting.duration)) }
-                        if meeting.status == .ready, !meeting.segments.isEmpty { Text("·"); Text("\(meeting.segments.count) falas") }
-                    }
-                    .font(Theme.body(12))
-                    .foregroundStyle(Theme.secondary)
-                    if meeting.status == .transcribing {
-                        ProgressView(value: meeting.progress)
-                            .progressViewStyle(.linear)
-                            .tint(Theme.accent)
-                            .frame(maxWidth: 220)
-                            .animation(.easeOut(duration: 0.3), value: meeting.progress)
-                    }
-                }
-                Spacer()
-                StatusPill(meeting: meeting)
-                Image(systemName: "chevron.right")
-                    .font(Theme.body(11))
-                    .foregroundStyle(Theme.secondary)
-                    .offset(x: hovering ? 2 : 0)
-            }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(hovering ? Theme.hover : Theme.card))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.border))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: hovering)
-    }
-
-    private static let time: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-}
-
-/// Day and month, the way a calendar shows them.
-private struct DateTile: View {
-    let date: Date
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Text(Self.day.string(from: date))
-                .font(Theme.display(20))
-                .foregroundStyle(Theme.accent)
-            Text(Self.month.string(from: date).uppercased().replacingOccurrences(of: ".", with: ""))
-                .font(Theme.mono(9, .medium)).tracking(0.7)
-                .foregroundStyle(Theme.secondary)
-        }
-        .frame(width: 46, height: 46)
-        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.accentTint))
-    }
-
-    private static let day: DateFormatter = { let f = DateFormatter(); f.dateFormat = "dd"; return f }()
-    private static let month: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
-        formatter.dateFormat = "MMM"
-        return formatter
-    }()
 }
 
 private struct StatusPill: View {
@@ -1088,6 +1386,8 @@ private struct AskBox: View {
     @ObservedObject var meetings: MeetingCenter
     let scope: Meeting?
     let open: (String) -> Void
+    /// The bar pinned at the bottom of the meetings home: answer above, pill-shaped field below.
+    var floating = false
     @State private var question = ""
     @State private var answer: String?
     @State private var asking = false
@@ -1095,9 +1395,21 @@ private struct AskBox: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if floating { answerArea }
+            field
+            if !floating { answerArea }
+        }
+        .animation(.easeOut(duration: 0.2), value: asking)
+    }
+
+    private var placeholder: String {
+        scope != nil ? "Pergunte sobre esta reunião" : floating ? "Resuma as reuniões da semana…" : "Pergunte sobre as suas reuniões"
+    }
+
+    private var field: some View {
             HStack(spacing: 10) {
                 Image(systemName: "sparkle.magnifyingglass").foregroundStyle(Theme.accent)
-                TextField(scope == nil ? "Pergunte sobre as suas reuniões" : "Pergunte sobre esta reunião", text: $question)
+                TextField(placeholder, text: $question)
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .onSubmit(ask)
@@ -1110,11 +1422,14 @@ private struct AskBox: View {
                         .help("Perguntar")
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.card))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(focused ? Theme.accent : Theme.border))
+            .padding(.horizontal, floating ? 18 : 12)
+            .padding(.vertical, floating ? 13 : 9)
+            .background(RoundedRectangle(cornerRadius: floating ? 24 : Theme.radius, style: .continuous).fill(Theme.card))
+            .overlay(RoundedRectangle(cornerRadius: floating ? 24 : Theme.radius, style: .continuous)
+                .strokeBorder(focused ? Theme.accent : Theme.border))
+    }
 
+    @ViewBuilder private var answerArea: some View {
             if asking {
                 VStack(alignment: .leading, spacing: 8) {
                     Shimmer()
@@ -1137,10 +1452,17 @@ private struct AskBox: View {
                         open(id)
                         return .handled
                     })
+                    .overlay(alignment: .topTrailing) {
+                        if floating {
+                            Button { self.answer = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)) }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Theme.secondary)
+                                .padding(10)
+                                .help("Fechar")
+                        }
+                    }
                     .transition(.opacity.combined(with: .offset(y: 6)))
             }
-        }
-        .animation(.easeOut(duration: 0.2), value: asking)
     }
 
     private func ask() {

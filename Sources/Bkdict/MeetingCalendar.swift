@@ -13,7 +13,21 @@ struct CalendarEvent: Equatable {
 @MainActor
 final class MeetingCalendar: ObservableObject {
     private let store = EKEventStore()
-    private var icsEvents: [CalendarEvent] = []
+    /// Published so the Today list follows a reload.
+    @Published private var icsEvents: [CalendarEvent] = []
+
+    /// Whether any calendar is set up (the Mac's, allowed, or an iCal address).
+    var isConfigured: Bool {
+        (Settings.useSystemCalendars && EKEventStore.authorizationStatus(for: .event) == .fullAccess)
+            || !Settings.calendarICS.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Today's events, in order.
+    func todayEvents(at now: Date = Date()) -> [CalendarEvent] {
+        let day = Calendar.current.startOfDay(for: now)
+        let next = day.addingTimeInterval(86_400)
+        return allEvents(around: now).filter { $0.start < next && $0.end > day }.sorted { $0.start < $1.start }
+    }
     private var refresh: Timer?
 
     init() {
@@ -45,6 +59,12 @@ final class MeetingCalendar: ObservableObject {
 
     /// The event going on now: started and not over, or starting within 10 minutes; the closest start wins.
     func currentEvent(at now: Date = Date()) -> CalendarEvent? {
+        allEvents(around: now)
+            .filter { $0.start <= now.addingTimeInterval(10 * 60) && $0.end > now }
+            .min { abs($0.start.timeIntervalSince(now)) < abs($1.start.timeIntervalSince(now)) }
+    }
+
+    private func allEvents(around now: Date) -> [CalendarEvent] {
         var candidates = icsEvents
         if Settings.useSystemCalendars, EKEventStore.authorizationStatus(for: .event) == .fullAccess {
             let predicate = store.predicateForEvents(withStart: now.addingTimeInterval(-12 * 3600),
@@ -62,8 +82,6 @@ final class MeetingCalendar: ObservableObject {
             }
         }
         return candidates
-            .filter { $0.start <= now.addingTimeInterval(10 * 60) && $0.end > now }
-            .min { abs($0.start.timeIntervalSince(now)) < abs($1.start.timeIntervalSince(now)) }
     }
 }
 

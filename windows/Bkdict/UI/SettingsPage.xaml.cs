@@ -35,6 +35,7 @@ public partial class SettingsPage : UserControl
         SoundsBox.IsChecked = model.SoundsEnabled;
         DictationBarBox.IsChecked = model.ShowsDictationBar;
         DetectMeetingsBox.IsChecked = model.DetectMeetings;
+        AutoRecordBox.IsChecked = model.AutoRecordMeetings;
         CalendarBox.Text = model.CalendarIcsUrl;
         PolishBox.IsChecked = model.PolishEnabled;
         StartupBox.IsChecked = model.LaunchAtStartup;
@@ -77,6 +78,12 @@ public partial class SettingsPage : UserControl
     private void DictationBar_Click(object sender, RoutedEventArgs e) => model.ShowsDictationBar = DictationBarBox.IsChecked == true;
 
     private void DetectMeetings_Click(object sender, RoutedEventArgs e) => model.DetectMeetings = DetectMeetingsBox.IsChecked == true;
+
+    private void AutoRecord_Click(object sender, RoutedEventArgs e)
+    {
+        model.AutoRecordMeetings = AutoRecordBox.IsChecked == true;
+        model.AutoRecordAsked = true;
+    }
 
     private void Calendar_LostFocus(object sender, RoutedEventArgs e) => model.CalendarIcsUrl = CalendarBox.Text;
 

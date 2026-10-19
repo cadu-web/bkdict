@@ -31,6 +31,7 @@ public static class IcsCalendar
         if (string.IsNullOrEmpty(url))
         {
             lock (Gate) events = new();
+            Changed?.Invoke();
             return;
         }
         // Google and Outlook hand out webcal:// links for the same https address.
@@ -41,11 +42,27 @@ public static class IcsCalendar
             var text = await Http.Client.GetStringAsync(url, deadline.Token);
             var parsed = Parse(text, DateTimeOffset.Now);
             lock (Gate) events = parsed;
+            Changed?.Invoke();
         }
         catch (Exception e)
         {
             Log.Write("calendar: " + e.Message);
         }
+    }
+
+    /// True when an iCal address is set (the Reuniões page shows "Conectar calendário" otherwise).
+    public static bool IsConfigured => !string.IsNullOrWhiteSpace(AppSettings.Current.CalendarIcsUrl);
+
+    /// Raised after each refresh, so the Reuniões page can show the day's events.
+    public static event Action? Changed;
+
+    /// Today's events (local day), in order of start.
+    public static List<CalendarEvent> Today(DateTimeOffset now)
+    {
+        List<CalendarEvent> list;
+        lock (Gate) list = events;
+        var today = now.LocalDateTime.Date;
+        return list.Where(e => e.Start.LocalDateTime.Date == today).OrderBy(e => e.Start).ToList();
     }
 
     /// The event happening now: started and not over, or starting within 10 minutes; the closest start wins.

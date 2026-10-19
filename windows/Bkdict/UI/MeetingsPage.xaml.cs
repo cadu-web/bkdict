@@ -17,7 +17,7 @@ namespace Bkdict.UI;
 
 /// Meetings: record one, then read its summary and its transcript (Você / Eles). Mirrors the macOS
 /// MeetingsViews.swift: a list of cards, and a detail with tabs, summary blocks, a conversation and skeletons.
-public partial class MeetingsPage : UserControl
+public partial class MeetingsPage : UserControl, IOwnScrolling
 {
     private static readonly CultureInfo PtBr = new("pt-BR");
     private const string Icons = "Segoe Fluent Icons, Segoe MDL2 Assets";
@@ -57,13 +57,19 @@ public partial class MeetingsPage : UserControl
             {
                 foreach (var timer in timers) timer.Text = Meeting.Clock(model.MeetingElapsed.TotalSeconds);
             }
-            else if (e.PropertyName == nameof(AppModel.IsMeetingRecording))
+            else if (e.PropertyName is nameof(AppModel.IsMeetingRecording) or nameof(AppModel.AutoRecordMeetings)
+                     or nameof(AppModel.AutoRecordAsked))
             {
                 Render();
             }
         });
+        IcsCalendar.Changed += () => Dispatcher.InvokeAsync(() => { if (selected == null) Render(); });
+        // The preview appears beside the list only when the page is wide enough.
+        SizeChanged += (_, _) => { if (selected == null && (ActualWidth >= 900) != wide) Render(); };
         Render();
     }
+
+    private bool ownedScrolling = true;
 
     private void Render()
     {
@@ -71,8 +77,19 @@ public partial class MeetingsPage : UserControl
         timers.Clear();
         progressText = null;
         progressBar = null;
+        // Re-rendering the list keeps where it was scrolled.
+        double offset = selected == null ? listScroll?.VerticalOffset ?? 0 : 0;
+        listScroll = null;
+        pastRows = null;
         Root.Children.Clear();
         Root.Children.Add(selected is { } meeting ? BuildDetail(meeting) : BuildList());
+        if (listScroll is { } scroll && offset > 0)
+            Dispatcher.InvokeAsync(() => scroll.ScrollToVerticalOffset(offset), DispatcherPriority.Loaded);
+        if (OwnsScrolling != ownedScrolling)
+        {
+            ownedScrolling = OwnsScrolling;
+            OwnsScrollingChanged?.Invoke();
+        }
     }
 
     private void Meeting_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -109,44 +126,529 @@ public partial class MeetingsPage : UserControl
         (Parent as ScrollViewer)?.ScrollToTop();
     }
 
-    // MARK: - List
+    // MARK: - List (docs/reunioes.md, "Tela de Reuniões (versão 3)")
+
+    /// The list scrolls its own middle column so the question stays pinned at the bottom and the preview at the side.
+    public bool OwnsScrolling => selected == null;
+    public event Action? OwnsScrollingChanged;
+
+    private Meeting? previewed;
+    private bool searchOpen;
+    private string searchText = "";
+    private bool wide;
+    private ScrollViewer? listScroll;
 
     private UIElement BuildList()
     {
-        var page = new StackPanel();
+        wide = ActualWidth >= 900;
+        var root = new Grid();
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        if (wide && model.Meetings.Count > 0) root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
 
-        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 20), LastChildFill = true };
-        if (!model.IsMeetingRecording)
-        {
-            var record = PrimaryButton("", "Gravar reunião", () => model.ToggleMeeting?.Invoke());
-            record.VerticalAlignment = VerticalAlignment.Bottom;
-            DockPanel.SetDock(record, Dock.Right);
-            header.Children.Add(record);
-        }
-        var titles = new StackPanel { Margin = new Thickness(0, 0, 16, 0) };
-        titles.Children.Add(new TextBlock { Text = "Reuniões", Style = (Style)FindResource("PageTitle") });
-        titles.Children.Add(Text("Grava o seu microfone e o áudio do computador, transcreve e resume. Tudo fica neste PC.",
-                                 14, fg: "BrandSecondary", wrap: true));
-        header.Children.Add(titles);
-        page.Children.Add(header);
+        var center = new Grid();
+        center.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        center.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        if (model.Meetings.Any(m => m.Status == Meeting.Ready)) page.Children.Add(AskBox(null));
-
+        var page = new StackPanel { Margin = new Thickness(32, 24, 32, 24), MaxWidth = 820 };
+        page.Children.Add(ListHeader());
         if (model.IsMeetingRecording)
         {
             var banner = RecordingBanner();
             banner.Margin = new Thickness(0, 0, 0, 16);
             page.Children.Add(banner);
-            SlideIn(banner, 0, -8);
+        }
+        if (!model.AutoRecordMeetings && !model.AutoRecordAsked) page.Children.Add(AutoRecordBanner());
+        page.Children.Add(TodayCard());
+        page.Children.Add(PastNotes());
+
+        listScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = page };
+        center.Children.Add(listScroll);
+
+        if (model.Meetings.Any(m => m.Status == Meeting.Ready))
+        {
+            var footer = FooterAsk();
+            Grid.SetRow(footer, 1);
+            center.Children.Add(footer);
+        }
+        root.Children.Add(center);
+
+        if (wide && model.Meetings.Count > 0)
+        {
+            var preview = Preview(PreviewedMeeting());
+            Grid.SetColumn(preview, 1);
+            root.Children.Add(preview);
+        }
+        return root;
+    }
+
+    private Meeting? PreviewedMeeting() =>
+        previewed != null && model.Meetings.Contains(previewed) ? previewed : model.Meetings.OrderByDescending(m => m.StartedAt).FirstOrDefault();
+
+    private UIElement ListHeader()
+    {
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 20), LastChildFill = true };
+        var record = model.IsMeetingRecording
+            ? PrimaryButton("", "Parar e resumir", () => model.ToggleMeeting?.Invoke())
+            : PrimaryButton("", "Gravar reunião", () => model.ToggleMeeting?.Invoke());
+        record.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(record, Dock.Right);
+        header.Children.Add(record);
+        var gear = IconButton("", "Ajustes", true, () => model.ShowSettings?.Invoke());
+        gear.VerticalAlignment = VerticalAlignment.Center;
+        gear.Margin = new Thickness(0, 0, 10, 0);
+        DockPanel.SetDock(gear, Dock.Right);
+        header.Children.Add(gear);
+        var title = new TextBlock { Text = "Reuniões", Style = (Style)FindResource("PageTitle"), VerticalAlignment = VerticalAlignment.Center };
+        header.Children.Add(title);
+        return header;
+    }
+
+    /// "Quer que o Bkdict grave sozinho?", until answered either way.
+    private UIElement AutoRecordBanner()
+    {
+        var row = new DockPanel { LastChildFill = true };
+
+        var turnOn = SecondaryButton("Ativar", () =>
+        {
+            model.AutoRecordMeetings = true;
+            model.DetectMeetings = true;
+            model.AutoRecordAsked = true;
+            Render();
+        });
+        turnOn.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(turnOn, Dock.Right);
+        row.Children.Add(turnOn);
+
+        var notNow = Text("Agora não", 13, FontWeights.Medium);
+        notNow.VerticalAlignment = VerticalAlignment.Center;
+        notNow.Margin = new Thickness(16, 0, 16, 0);
+        notNow.Cursor = Cursors.Hand;
+        notNow.MouseLeftButtonUp += (_, _) =>
+        {
+            model.AutoRecordAsked = true;
+            Render();
+        };
+        AutomationLabel(notNow, "Agora não");
+        DockPanel.SetDock(notNow, Dock.Right);
+        row.Children.Add(notNow);
+
+        var icon = Glyph("", 16, "BrandAccent");
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        var circle = new Border { Width = 40, Height = 40, CornerRadius = new CornerRadius(20), BorderThickness = new Thickness(1), Child = icon,
+                                  Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center };
+        circle.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+        DockPanel.SetDock(circle, Dock.Left);
+        row.Children.Add(circle);
+
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        texts.Children.Add(Text("Quer que o Bkdict grave sozinho?", 14, FontWeights.SemiBold));
+        var body = Text("Começa a gravar assim que a chamada começa e para quando ela acaba.", 13, fg: "BrandSecondary", wrap: true);
+        body.Margin = new Thickness(0, 2, 0, 0);
+        texts.Children.Add(body);
+        row.Children.Add(texts);
+
+        var card = Card(row, new Thickness(16, 14, 16, 14));
+        card.Margin = new Thickness(0, 0, 0, 16);
+        return card;
+    }
+
+    /// HOJE: today's calendar events, with "Gravar" on the one going on now.
+    private UIElement TodayCard()
+    {
+        var stack = new StackPanel();
+        var label = Text("HOJE", 10, FontWeights.Medium, "BrandSecondary", "MonoFont");
+        label.Margin = new Thickness(0, 0, 0, 12);
+        stack.Children.Add(label);
+
+        if (!IcsCalendar.IsConfigured)
+        {
+            var empty = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 16) };
+            var icon = Glyph("", 26, "BrandSecondary");
+            icon.HorizontalAlignment = HorizontalAlignment.Center;
+            empty.Children.Add(icon);
+            var none = Text("Nenhuma reunião encontrada", 16, fg: "BrandSecondary");
+            none.HorizontalAlignment = HorizontalAlignment.Center;
+            none.Margin = new Thickness(0, 10, 0, 14);
+            empty.Children.Add(none);
+            var connect = PrimaryButton(null, "Conectar calendário", () => model.ShowSettings?.Invoke());
+            connect.HorizontalAlignment = HorizontalAlignment.Center;
+            empty.Children.Add(connect);
+            stack.Children.Add(empty);
+        }
+        else
+        {
+            var now = DateTimeOffset.Now;
+            var events = IcsCalendar.Today(now);
+            if (events.Count == 0)
+            {
+                var none = Text("Nenhuma reunião hoje no calendário", 14, fg: "BrandSecondary");
+                none.Margin = new Thickness(0, 4, 0, 4);
+                stack.Children.Add(none);
+            }
+            var current = IcsCalendar.Current(now);
+            foreach (var calendarEvent in events)
+            {
+                var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 4, 0, 4) };
+                if (calendarEvent == current)
+                {
+                    UIElement action = model.IsMeetingRecording
+                        ? Text("GRAVANDO", 10, FontWeights.Medium, "BrandAccent", "MonoFont")
+                        : PrimaryButton("", "Gravar", () => model.ToggleMeeting?.Invoke());
+                    if (action is FrameworkElement element) element.VerticalAlignment = VerticalAlignment.Center;
+                    DockPanel.SetDock(action, Dock.Right);
+                    row.Children.Add(action);
+                }
+                var time = Text(calendarEvent.Start.LocalDateTime.ToString("HH:mm", PtBr), 12, FontWeights.Medium, "BrandSecondary", "MonoFont");
+                time.Width = 52;
+                time.VerticalAlignment = VerticalAlignment.Center;
+                DockPanel.SetDock(time, Dock.Left);
+                row.Children.Add(time);
+                var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var title = Text(calendarEvent.Title, 14, FontWeights.Medium);
+                title.TextTrimming = TextTrimming.CharacterEllipsis;
+                info.Children.Add(title);
+                if (calendarEvent.Attendees.Count > 0)
+                    info.Children.Add(Text(calendarEvent.Attendees.Count == 1 ? "1 convidado" : $"{calendarEvent.Attendees.Count} convidados", 12, fg: "BrandSecondary"));
+                row.Children.Add(info);
+                stack.Children.Add(row);
+            }
         }
 
+        var card = new Border { Padding = new Thickness(20, 18, 20, 18), CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1),
+                                Margin = new Thickness(0, 0, 0, 28), Child = stack };
+        card.SetResourceReference(Border.BackgroundProperty, "BrandSidebar");
+        card.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+        return card;
+    }
+
+    /// Anteriores: the recorded meetings by day, with a search behind the magnifier.
+    private UIElement PastNotes()
+    {
+        var stack = new StackPanel();
+
+        var bar = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 16) };
+        var magnifier = IconButton(searchOpen ? "" : "", searchOpen ? "Fechar a busca" : "Buscar", true, () =>
+        {
+            searchOpen = !searchOpen;
+            if (!searchOpen) searchText = "";
+            Render();
+        });
+        magnifier.VerticalAlignment = VerticalAlignment.Bottom;
+        DockPanel.SetDock(magnifier, Dock.Right);
+        bar.Children.Add(magnifier);
+        var tabLabel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Left };
+        tabLabel.Children.Add(Text("Anteriores", 14, FontWeights.SemiBold));
+        var underline = new Border { Height = 2, Margin = new Thickness(0, 7, 0, 0) };
+        underline.SetResourceReference(Border.BackgroundProperty, "BrandAccent");
+        tabLabel.Children.Add(underline);
+        bar.Children.Add(tabLabel);
+        stack.Children.Add(bar);
+
+        if (searchOpen)
+        {
+            var input = new TextBox { Text = searchText, FontSize = 14, Padding = new Thickness(10, 7, 10, 7), Margin = new Thickness(0, 0, 0, 16) };
+            input.SetResourceReference(Control.FontFamilyProperty, "BodyFont");
+            AutomationLabel(input, "Buscar nas reuniões");
+            input.TextChanged += (_, _) =>
+            {
+                searchText = input.Text;
+                RenderPastRows();
+            };
+            input.KeyDown += (_, e) =>
+            {
+                if (e.Key != Key.Escape) return;
+                searchOpen = false;
+                searchText = "";
+                Render();
+            };
+            input.Loaded += (_, _) => { input.Focus(); input.CaretIndex = input.Text.Length; };
+            stack.Children.Add(input);
+        }
+
+        pastRows = new StackPanel();
+        stack.Children.Add(pastRows);
+        RenderPastRows();
+        return stack;
+    }
+
+    private StackPanel? pastRows;
+
+    /// The day groups, rebuilt alone while typing in the search so the field keeps its focus.
+    private void RenderPastRows()
+    {
+        if (pastRows == null) return;
+        pastRows.Children.Clear();
         if (model.Meetings.Count == 0)
         {
-            page.Children.Add(EmptyState());
-            return page;
+            pastRows.Children.Add(EmptyState());
+            return;
         }
-        foreach (var meeting in model.Meetings) page.Children.Add(MeetingCard(meeting));
-        return page;
+        var query = searchText.Trim();
+        var shown = model.Meetings.Where(m => query.Length == 0 || Matches(m, query)).OrderByDescending(m => m.StartedAt).ToList();
+        if (shown.Count == 0)
+        {
+            pastRows.Children.Add(Text($"Nada encontrado para “{query}”.", 14, fg: "BrandSecondary"));
+            return;
+        }
+        var today = DateTime.Now.Date;
+        foreach (var day in shown.GroupBy(m => m.StartedAt.LocalDateTime.Date))
+        {
+            var label = day.Key == today ? "HOJE"
+                      : day.Key == today.AddDays(-1) ? "ONTEM"
+                      : day.Key.ToString("ddd, d 'de' MMM", PtBr).Replace(".", "").ToUpper(PtBr);
+            var heading = Text(label, 11, FontWeights.Medium, "BrandSecondary", "MonoFont");
+            heading.Margin = new Thickness(6, pastRows.Children.Count == 0 ? 0 : 18, 0, 8);
+            pastRows.Children.Add(heading);
+            foreach (var meeting in day) pastRows.Children.Add(PastRow(meeting));
+        }
+    }
+
+    private static bool Matches(Meeting meeting, string query)
+    {
+        var compare = PtBr.CompareInfo;
+        const CompareOptions loose = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+        return compare.IndexOf(meeting.Title, query, loose) >= 0
+            || compare.IndexOf(meeting.Summary ?? "", query, loose) >= 0
+            || compare.IndexOf(meeting.TranscriptText(), query, loose) >= 0;
+    }
+
+    private UIElement PastRow(Meeting meeting)
+    {
+        bool isSelected = meeting == PreviewedMeeting() && wide;
+        var row = new DockPanel { LastChildFill = true };
+
+        if (meeting.Status != Meeting.Ready)
+        {
+            var pill = StatusPill(meeting);
+            pill.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(pill, Dock.Right);
+            row.Children.Add(pill);
+        }
+
+        var icon = Glyph("", 15, "BrandSecondary");
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        var tile = new Border { Width = 36, Height = 36, CornerRadius = new CornerRadius(4), Child = icon, Margin = new Thickness(0, 0, 14, 0) };
+        tile.SetResourceReference(Border.BackgroundProperty, isSelected ? "BrandCard" : "BrandHover");
+        DockPanel.SetDock(tile, Dock.Left);
+        row.Children.Add(tile);
+
+        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var title = Text(meeting.Title, 14, FontWeights.Medium);
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        info.Children.Add(title);
+        var meta = meeting.StartedAt.LocalDateTime.ToString("HH:mm", PtBr) + (meeting.Status == Meeting.Recording ? "" : "  ·  " + meeting.DurationLabel);
+        var line = Text(meta, 12, fg: "BrandSecondary");
+        line.Margin = new Thickness(0, 3, 0, 0);
+        info.Children.Add(line);
+        if (meeting.Status == Meeting.Transcribing)
+        {
+            var progress = ThinProgress(meeting.Progress);
+            progress.MaxWidth = 220;
+            progress.HorizontalAlignment = HorizontalAlignment.Left;
+            progress.Margin = new Thickness(0, 6, 0, 0);
+            info.Children.Add(progress);
+        }
+        row.Children.Add(info);
+
+        var item = new Border { Padding = new Thickness(10), CornerRadius = new CornerRadius(4), Margin = new Thickness(0, 0, 0, 4), Child = row, Cursor = Cursors.Hand,
+                                Background = Brushes.Transparent, ToolTip = "Clique para ver, dois cliques para abrir" };
+        if (isSelected) item.SetResourceReference(Border.BackgroundProperty, "BrandHover");
+        item.MouseEnter += (_, _) => { if (!isSelected) item.SetResourceReference(Border.BackgroundProperty, "BrandHover"); };
+        item.MouseLeave += (_, _) => { if (!isSelected) item.Background = Brushes.Transparent; };
+        item.MouseLeftButtonDown += (_, e) =>
+        {
+            if (e.ClickCount >= 2 || !wide)
+            {
+                Open(meeting);
+                return;
+            }
+            previewed = meeting;
+            Render();
+        };
+        AutomationLabel(item, meeting.Title);
+        return item;
+    }
+
+    /// The question pinned at the bottom, with the answer in a card above it.
+    private UIElement FooterAsk()
+    {
+        if (askScope != "*")
+        {
+            askScope = "*";
+            askQuestion = "";
+            askAnswer = null;
+            askBusy = false;
+        }
+        var stack = new StackPanel { Margin = new Thickness(32, 4, 32, 16), MaxWidth = 820 };
+
+        if (askBusy || askAnswer != null)
+        {
+            UIElement content;
+            if (askBusy)
+            {
+                var waiting = new StackPanel();
+                waiting.Children.Add(Skeleton(null, 12, new Thickness(0, 0, 0, 10)));
+                waiting.Children.Add(Skeleton(null, 12, new Thickness(0, 0, 0, 10)));
+                waiting.Children.Add(Skeleton(260, 12));
+                content = waiting;
+            }
+            else
+            {
+                var text = new TextBlock { FontSize = 14, TextWrapping = TextWrapping.Wrap, LineHeight = 22 };
+                text.SetResourceReference(TextBlock.FontFamilyProperty, "BodyFont");
+                text.SetResourceReference(TextBlock.ForegroundProperty, "BrandText");
+                AddAnswer(text, askAnswer!);
+                var close = Glyph("", 11, "BrandSecondary");
+                close.Cursor = Cursors.Hand;
+                close.Margin = new Thickness(12, 2, 0, 0);
+                close.VerticalAlignment = VerticalAlignment.Top;
+                close.ToolTip = "Fechar";
+                close.MouseLeftButtonUp += (_, _) =>
+                {
+                    askAnswer = null;
+                    Render();
+                };
+                AutomationLabel(close, "Fechar a resposta");
+                var dock = new DockPanel { LastChildFill = true };
+                DockPanel.SetDock(close, Dock.Right);
+                dock.Children.Add(close);
+                dock.Children.Add(new ScrollViewer { Content = text, MaxHeight = 240, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+                content = dock;
+            }
+            var card = Card(content, new Thickness(16));
+            card.Margin = new Thickness(0, 0, 0, 10);
+            stack.Children.Add(card);
+            if (!askBusy) SlideIn(card, 0, 8);
+        }
+
+        var input = new TextBox
+        {
+            Text = askQuestion, FontSize = 14, BorderThickness = new Thickness(0), Background = Brushes.Transparent,
+            VerticalContentAlignment = VerticalAlignment.Center, IsEnabled = !askBusy, Padding = new Thickness(2, 0, 2, 0),
+        };
+        input.SetResourceReference(Control.FontFamilyProperty, "BodyFont");
+        input.SetResourceReference(Control.ForegroundProperty, "BrandText");
+        const string placeholder = "Resuma as reuniões da semana…";
+        AutomationLabel(input, "Pergunte sobre as suas reuniões");
+        var hint = Text(placeholder, 14, fg: "BrandSecondary");
+        hint.Margin = new Thickness(4, 0, 0, 0);
+        hint.VerticalAlignment = VerticalAlignment.Center;
+        hint.IsHitTestVisible = false;
+        hint.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        input.TextChanged += (_, _) =>
+        {
+            askQuestion = input.Text;
+            hint.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        };
+        input.KeyDown += async (_, e) =>
+        {
+            if (e.Key != Key.Enter || askBusy || input.Text.Trim().Length == 0) return;
+            e.Handled = true;
+            await AskAsync(input.Text.Trim(), null, "*");
+        };
+        var field = new Grid { MinHeight = 24 };
+        field.Children.Add(input);
+        field.Children.Add(hint);
+        // The one rounded field on the page: a pill, like the question bar it is modeled on.
+        var pill = new Border { CornerRadius = new CornerRadius(22), BorderThickness = new Thickness(1), Padding = new Thickness(18, 10, 18, 10), Child = field };
+        pill.SetResourceReference(Border.BackgroundProperty, "BrandCard");
+        pill.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+        stack.Children.Add(pill);
+        return stack;
+    }
+
+    /// The selected meeting at a glance: overview, people and tasks, and "Abrir reunião".
+    private UIElement Preview(Meeting? meeting)
+    {
+        var pane = new Border { BorderThickness = new Thickness(1, 0, 0, 0) };
+        pane.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+        if (meeting == null) return pane;
+
+        var stack = new StackPanel { Margin = new Thickness(24, 28, 24, 24) };
+        var title = Text(meeting.Title, 22, FontWeights.Medium, "BrandText", "DisplayFont", wrap: true);
+        stack.Children.Add(title);
+        var when = meeting.StartedAt.LocalDateTime;
+        var date = Text($"{when.ToString("dddd", PtBr)} • {when.ToString("HH:mm", PtBr)}", 13, fg: "BrandSecondary");
+        date.Margin = new Thickness(0, 6, 0, 0);
+        stack.Children.Add(date);
+        var rule = new Border { Height = 1, Margin = new Thickness(0, 18, 0, 18) };
+        rule.SetResourceReference(Border.BackgroundProperty, "BrandBorder");
+        stack.Children.Add(rule);
+
+        stack.Children.Add(PreviewLabel("VISÃO GERAL"));
+        var summary = meeting.Summary is { } markdown ? MeetingSummary.Parse(markdown) : null;
+        string overview = meeting.Status == Meeting.Ready
+            ? (summary is { Overview.Count: > 0 } ? Plain(string.Join(" ", summary.Overview)) : "Sem resumo.")
+            : StatusText(meeting) + "…";
+        var paragraph = Text(overview, 14, wrap: true);
+        paragraph.LineHeight = 22;
+        stack.Children.Add(paragraph);
+
+        var people = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var you = Text("Você", 13, FontWeights.SemiBold, "BrandAccent");
+        you.Margin = new Thickness(0, 0, 12, 4);
+        people.Children.Add(you);
+        if (meeting.Speakers.Count > 0)
+        {
+            for (int voice = 0; voice < meeting.Speakers.Count; voice++)
+            {
+                var name = Text(meeting.VoiceName(voice), 13, FontWeights.SemiBold);
+                name.Foreground = VoiceInk(voice);
+                name.Margin = new Thickness(0, 0, 12, 4);
+                people.Children.Add(name);
+            }
+        }
+        else
+        {
+            foreach (var attendee in meeting.Attendees)
+            {
+                var name = Text(attendee, 13);
+                name.Margin = new Thickness(0, 0, 12, 4);
+                people.Children.Add(name);
+            }
+        }
+        var peopleLabel = PreviewLabel("PARTICIPANTES");
+        peopleLabel.Margin = new Thickness(0, 20, 0, 8);
+        stack.Children.Add(peopleLabel);
+        stack.Children.Add(people);
+
+        if (summary is { Tasks.Count: > 0 })
+        {
+            var tasksLabel = PreviewLabel("TAREFAS");
+            tasksLabel.Margin = new Thickness(0, 16, 0, 8);
+            stack.Children.Add(tasksLabel);
+            foreach (var task in summary.Tasks.Take(5))
+            {
+                var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 6) };
+                if (task.Owner is { } owner)
+                {
+                    var chip = OwnerChip(owner);
+                    chip.VerticalAlignment = VerticalAlignment.Top;
+                    chip.Margin = new Thickness(0, 1, 8, 0);
+                    DockPanel.SetDock(chip, Dock.Left);
+                    row.Children.Add(chip);
+                }
+                row.Children.Add(Text(Plain(task.Text), 13, wrap: true));
+                stack.Children.Add(row);
+            }
+        }
+
+        var open = PrimaryButton(null, "Abrir reunião", () => Open(meeting));
+        open.HorizontalAlignment = HorizontalAlignment.Left;
+        open.Margin = new Thickness(0, 22, 0, 0);
+        stack.Children.Add(open);
+
+        pane.Child = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        return pane;
+    }
+
+    private TextBlock PreviewLabel(string text)
+    {
+        var label = Text(text, 10, FontWeights.Medium, "BrandSecondary", "MonoFont");
+        label.Margin = new Thickness(0, 0, 0, 8);
+        return label;
     }
 
     private Border RecordingBanner()
@@ -199,84 +701,6 @@ public partial class MeetingsPage : UserControl
         body.MaxWidth = 440;
         stack.Children.Add(body);
         return Card(stack, new Thickness(16, 44, 16, 44));
-    }
-
-    private UIElement MeetingCard(Meeting meeting)
-    {
-        var row = new DockPanel { LastChildFill = true };
-
-        var chevron = Glyph("", 11, "BrandSecondary");
-        chevron.VerticalAlignment = VerticalAlignment.Center;
-        chevron.Margin = new Thickness(12, 0, 0, 0);
-        var shift = new TranslateTransform();
-        chevron.RenderTransform = shift;
-        DockPanel.SetDock(chevron, Dock.Right);
-        row.Children.Add(chevron);
-
-        var pill = StatusPill(meeting);
-        pill.VerticalAlignment = VerticalAlignment.Center;
-        DockPanel.SetDock(pill, Dock.Right);
-        row.Children.Add(pill);
-
-        var tile = DateTile(meeting.StartedAt.LocalDateTime);
-        tile.Margin = new Thickness(0, 0, 14, 0);
-        DockPanel.SetDock(tile, Dock.Left);
-        row.Children.Add(tile);
-
-        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        var title = Text(meeting.Title, 14, FontWeights.Medium);
-        title.TextTrimming = TextTrimming.CharacterEllipsis;
-        info.Children.Add(title);
-        var meta = new List<string> { meeting.StartedAt.LocalDateTime.ToString("HH:mm", PtBr) };
-        if (meeting.Status != Meeting.Recording) meta.Add(meeting.DurationLabel);
-        if (meeting.Status == Meeting.Ready && meeting.Segments.Count > 0) meta.Add($"{meeting.Segments.Count} falas");
-        var line = Text(string.Join("  ·  ", meta), 12, fg: "BrandSecondary");
-        line.Margin = new Thickness(0, 4, 0, 0);
-        info.Children.Add(line);
-        if (meeting.Status == Meeting.Transcribing)
-        {
-            var bar = ThinProgress(meeting.Progress);
-            bar.MaxWidth = 220;
-            bar.HorizontalAlignment = HorizontalAlignment.Left;
-            bar.Margin = new Thickness(0, 6, 0, 0);
-            info.Children.Add(bar);
-        }
-        row.Children.Add(info);
-
-        var card = new Border
-        {
-            Padding = new Thickness(14), Margin = new Thickness(0, 0, 0, 8), CornerRadius = new CornerRadius(4),
-            BorderThickness = new Thickness(1), Child = row, Cursor = Cursors.Hand,
-        };
-        card.SetResourceReference(Border.BackgroundProperty, "BrandCard");
-        card.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
-        card.MouseEnter += (_, _) =>
-        {
-            card.SetResourceReference(Border.BackgroundProperty, "BrandHover");
-            Move(shift, 2);
-        };
-        card.MouseLeave += (_, _) =>
-        {
-            card.SetResourceReference(Border.BackgroundProperty, "BrandCard");
-            Move(shift, 0);
-        };
-        card.MouseLeftButtonUp += (_, _) => Open(meeting);
-        return card;
-    }
-
-    private Border DateTile(DateTime date)
-    {
-        var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        var day = Text(date.ToString("dd", PtBr), 20, FontWeights.Medium, "BrandAccent", "DisplayFont");
-        day.HorizontalAlignment = HorizontalAlignment.Center;
-        stack.Children.Add(day);
-        var month = Text(date.ToString("MMM", PtBr).Replace(".", "").ToUpperInvariant(), 9, FontWeights.Medium, "BrandSecondary", "MonoFont");
-        month.HorizontalAlignment = HorizontalAlignment.Center;
-        month.Margin = new Thickness(0, -2, 0, 0);
-        stack.Children.Add(month);
-        var tile = new Border { Width = 46, Height = 46, CornerRadius = new CornerRadius(4), Child = stack };
-        tile.SetResourceReference(Border.BackgroundProperty, "BrandAccentTint");
-        return tile;
     }
 
     private Border StatusPill(Meeting meeting)

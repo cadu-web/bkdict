@@ -42,6 +42,12 @@ final class AppModel: ObservableObject {
     @Published var calendarICS = Settings.calendarICS {
         didSet { Settings.calendarICS = calendarICS }
     }
+    @Published var autoRecordMeetings = Settings.autoRecordMeetings {
+        didSet { Settings.autoRecordMeetings = autoRecordMeetings }
+    }
+    @Published var autoRecordAsked = Settings.autoRecordAsked {
+        didSet { Settings.autoRecordAsked = autoRecordAsked }
+    }
     @Published var detectMeetings = Settings.detectMeetings {
         didSet { Settings.detectMeetings = detectMeetings }
     }

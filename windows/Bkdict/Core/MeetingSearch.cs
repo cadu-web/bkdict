@@ -18,6 +18,17 @@ public static class MeetingSearch
         "sobre", "isso", "essa", "esse", "quem", "qual", "quando", "onde", "reuniao", "reunioes",
     };
 
+    /// hoje, ontem, semana (the last 7 days) or mês (the last 30), from the question's words.
+    public static (DateTime From, DateTime To)? Period(IReadOnlyCollection<string> words, DateTime now)
+    {
+        var today = now.Date;
+        if (words.Contains("hoje")) return (today, today.AddDays(1));
+        if (words.Contains("ontem")) return (today.AddDays(-1), today);
+        if (words.Contains("semana")) return (today.AddDays(-6), today.AddDays(1));
+        if (words.Contains("mes")) return (today.AddDays(-29), today.AddDays(1));
+        return null;
+    }
+
     /// Lowercase, without accents, without words of up to 2 letters and the common ones.
     public static List<string> Words(string text)
     {
@@ -33,6 +44,25 @@ public static class MeetingSearch
     {
         var words = Words(question);
         var pool = only != null ? new List<Meeting> { only } : meetings.Where(m => m.Status == Meeting.Ready).ToList();
+
+        // A period in the question ("hoje", "ontem", "semana", "mês") takes every meeting in it, summaries only.
+        if (only == null && Period(words, DateTime.Now) is { } period)
+        {
+            var inPeriod = pool.Where(m => m.StartedAt.LocalDateTime >= period.From && m.StartedAt.LocalDateTime < period.To)
+                               .OrderByDescending(m => m.StartedAt).ToList();
+            var summaries = new StringBuilder();
+            foreach (var meeting in inPeriod)
+            {
+                var part = $"### {meeting.Title} ({meeting.StartedAt:dd/MM/yyyy HH:mm})\n{meeting.Summary?.Trim()}\n\n";
+                if (summaries.Length + part.Length > Limit)
+                {
+                    summaries.Append(part[..Math.Max(0, Limit - summaries.Length)]);
+                    break;
+                }
+                summaries.Append(part);
+            }
+            return summaries.ToString().Trim();
+        }
 
         int Hits(string text)
         {

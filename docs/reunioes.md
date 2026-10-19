@@ -244,6 +244,51 @@ Fica para quando houver como testar; os convidados do calendário (fase 4) vão 
   tarefa não feita, na lista padrão do app Lembretes, com nota `<título da reunião>`; pede permissão de Lembretes na
   primeira vez — `NSRemindersFullAccessUsageDescription`). Depois de criar, mostra `N lembretes criados` por 3 s.
 
+# Tela de Reuniões (versão 3)
+
+Inspirada no Notetaker do Wispr Flow, com a identidade da BKDG. Substitui a lista da versão anterior (o detalhe de
+uma reunião continua igual).
+
+## Estrutura (de cima para baixo, coluna central; prévia à direita)
+
+1. **Cabeçalho**: título "Reuniões" (Display), botão ⚙ (abre Ajustes) e botão primário **Gravar reunião** (vira
+   "Parar e resumir" com o tempo enquanto grava; o banner de gravação da versão anterior continua abaixo do cabeçalho).
+2. **Banner "Gravar sozinho?"** — só enquanto `autoRecordMeetings` está desligado e `autoRecordAsked` é falso: ícone
+   ◎, título **Quer que o Bkdict grave sozinho?**, texto "Começa a gravar assim que a chamada começa e para quando ela
+   acaba.", botões **Agora não** (texto) e **Ativar** (secundário). Os dois marcam `autoRecordAsked`; Ativar liga
+   `autoRecordMeetings`.
+3. **HOJE** (cartão de fundo levemente destacado, rótulo mono): eventos de hoje do calendário (EventKit e/ou iCal),
+   em ordem, cada um com o horário (`HH:mm`), título, "N convidados" e, no que está acontecendo agora, o botão
+   **Gravar** (ou "Gravando" se já estiver). Sem calendário configurado: ícone de calendário, "Nenhuma reunião
+   encontrada" e botão primário **Conectar calendário** (abre Ajustes). Configurado e sem eventos hoje: "Nenhuma
+   reunião hoje no calendário".
+4. **Anteriores**: rótulo-aba "Anteriores" sublinhado em Bordô e, à direita, uma lupa que abre um campo de busca
+   (filtra por título, resumo e transcrição; Esc ou ✕ fecha). As reuniões agrupadas por dia com cabeçalho mono
+   maiúsculo (`QUI, 15 DE OUT`; hoje = `HOJE`, ontem = `ONTEM`); cada linha: ícone de documento num quadrado neutro,
+   título, horário `HH:mm` e duração, e a pílula de estado quando não está pronta. Linha selecionada com fundo
+   destacado; clique seleciona (abre a prévia), duplo clique ou "Abrir" abre o detalhe.
+5. **Pergunta fixa no rodapé**: campo arredondado flutuante "Resuma as reuniões da semana…", Enter envia; a resposta
+   aparece num cartão acima do campo (com skeleton e ✕ para fechar), com as citações clicáveis. Some se não houver
+   reunião pronta.
+
+**Prévia à direita** (largura ~300, só quando a janela tem espaço; separada por um filete): título (Display),
+`<dia da semana> • HH:mm`, filete, rótulo **VISÃO GERAL** e o parágrafo de resumo; **PARTICIPANTES**: "Você" (Bordô)
+e as vozes com o nome e a cor de cada uma (ou os convidados, se não houver vozes); **TAREFAS** (até 5, com o dono);
+botão **Abrir reunião**. Sem seleção: a reunião mais recente.
+
+## Gravar sozinho
+
+Com `autoRecordMeetings` ligado, quando a fase 2 detecta uma chamada e não há gravação, a gravação começa direto
+(sem convite), com o título do app/evento; quando a chamada acaba, para e resume sozinha (sem convite). Em Ajustes,
+linha "Gravar reuniões sozinho" logo abaixo de "Detectar reuniões" (só faz efeito com a detecção ligada).
+
+## Perguntas com período
+
+Se a pergunta menciona `hoje`, `ontem`, `semana` (esta semana, últimos 7 dias) ou `mês` (últimos 30 dias), as
+reuniões do período entram todas (as mais recentes primeiro, só o resumo, até os 8.000 caracteres), em vez da busca
+por palavras.
+
 ## Depois
 
-Nomes automáticos pelo Zoom/Meet (ver fase 3), aviso antes de uma reunião do calendário começar.
+Nomes automáticos pelo Zoom/Meet (ver fase 3), aviso antes de uma reunião do calendário começar, pastas,
+compartilhar, histórico de perguntas.

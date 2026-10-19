@@ -174,17 +174,28 @@ public sealed class AppController
         detector.Enabled = () => model.DetectMeetings;
         detector.CallStarted += app =>
         {
+            // "Gravar sozinho": record right away, no offer.
+            if (model.AutoRecordMeetings)
+            {
+                if (model.RecordingMeeting == null) StartMeeting(app);
+                return;
+            }
             if (model.RecordingMeeting != null || offeredCall == app) return;
             offeredCall = app;
             overlay.ShowOffer($"Reunião no {app}", "Gravar", "\uE7C8", TimeSpan.FromSeconds(20),
                 run: () => { if (model.RecordingMeeting == null) StartMeeting(app); },
                 dismissed: () => { });
         };
-        detector.CallEnded += app =>
+        detector.CallEnded += async app =>
         {
             offeredCall = null;
             overlay.ClearOffer();
             if (model.RecordingMeeting is not { } recording) return;
+            if (model.AutoRecordMeetings)
+            {
+                await StopMeetingAsync(recording);
+                return;
+            }
             overlay.ShowOffer($"A chamada no {app} acabou", "Parar e resumir", "\uE71A", TimeSpan.FromSeconds(30),
                 run: async () => { if (model.RecordingMeeting == recording) await StopMeetingAsync(recording); },
                 dismissed: () => { });

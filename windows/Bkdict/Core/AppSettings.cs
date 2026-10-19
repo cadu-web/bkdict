@@ -42,6 +42,12 @@ public sealed class AppSettings
     /// Offers to record when a call starts in Zoom, Teams, Meet and others (docs/reunioes.md, "Fase 2").
     public bool DetectMeetings { get; set; } = true;
 
+    /// Records a detected call by itself, and stops when it ends, instead of offering (docs/reunioes.md, "Gravar sozinho").
+    public bool AutoRecordMeetings { get; set; }
+
+    /// The "Gravar sozinho?" banner was answered (either way) and stays hidden.
+    public bool AutoRecordAsked { get; set; }
+
     /// An iCal (.ics) address whose events name the meetings and their invitees (docs/reunioes.md, "Fase 4").
     public string? CalendarIcsUrl { get; set; }
 
