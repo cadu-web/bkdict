@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using Bkdict.Core;
 using Bkdict.Platform;
 
 namespace Bkdict.UI;
@@ -44,6 +45,8 @@ public partial class OverlayWindow : Window
     private static readonly Size Hovered = new(168, 36), HoveredSide = new(52, 112);
     private static readonly Size Recording = new(300, 40), RecordingSide = new(40, 104);
     private static readonly Size Busy = new(260, 40), BusySide = new(40, 40), TipSize = new(380, 40);
+    // While a meeting is recorded and nothing is being dictated (docs/reunioes.md).
+    private static readonly Size MeetingPill = new(112, 28), MeetingPillSide = new(32, 84);
 
     private readonly DockGuideWindow guide = new();
     private readonly DispatcherTimer screenTimer = new() { Interval = TimeSpan.FromSeconds(0.5) };
@@ -56,6 +59,8 @@ public partial class OverlayWindow : Window
     private IntPtr currentMonitor;
     private IReadOnlyList<string> dictateKeys = Array.Empty<string>();
     private bool showsIdleBar = true;
+    private TimeSpan? meetingElapsed;
+    private readonly List<(TextBlock Block, Func<TimeSpan, string> Format)> meetingClocks = new();
     private string edge = Edges.Bottom;
 
     // Dragging, in physical pixels.
@@ -72,6 +77,8 @@ public partial class OverlayWindow : Window
     public Func<string> CurrentMicrophone { get; set; } = () => Microphones.Automatic;
     public Action<string> OnSelectMicrophone { get; set; } = _ => { };
     public Action<string> OnEdgeChanged { get; set; } = _ => { };
+    public Action OnToggleMeeting { get; set; } = () => { };
+    public Func<bool> IsMeetingRecording { get; set; } = () => false;
 
     public OverlayWindow()
     {
@@ -132,6 +139,28 @@ public partial class OverlayWindow : Window
         set { showsIdleBar = value; Place(); }
     }
 
+    /// Time recorded in the current meeting, or null when none is: the idle bar becomes "● 12:34 ■".
+    public TimeSpan? MeetingElapsed
+    {
+        set
+        {
+            bool changed = (meetingElapsed == null) != (value == null);
+            meetingElapsed = value;
+            if (changed)
+            {
+                Render();
+                Place();
+            }
+            else if (value is { } elapsed)
+            {
+                // Only the digits change: rebuilding the content every second would swallow a click on stop.
+                foreach (var (block, format) in meetingClocks) block.Text = format(elapsed);
+            }
+        }
+    }
+
+    private bool ShowsMeetingPill => phase == OverlayPhase.Hidden && meetingElapsed != null;
+
     public string Edge
     {
         get => edge;
@@ -175,6 +204,8 @@ public partial class OverlayWindow : Window
     /// The bar's size for its state, or null when it should not be on screen.
     private Size? CurrentSize()
     {
+        // A meeting being recorded always shows, even with the idle bar off or snoozed.
+        if (ShowsMeetingPill) return Side ? MeetingPillSide : MeetingPill;
         if (phase == OverlayPhase.Hidden)
         {
             bool snoozed = hiddenUntil is { } until && until > DateTime.Now;
@@ -191,7 +222,8 @@ public partial class OverlayWindow : Window
 
     private void Render()
     {
-        bool idleHandle = phase == OverlayPhase.Hidden && !hovering;
+        meetingClocks.Clear();
+        bool idleHandle = phase == OverlayPhase.Hidden && !hovering && !ShowsMeetingPill;
         Root.Background = Frozen(TintaColor, idleHandle ? 0.55 : 0.94);
         Root.BorderBrush = Frozen(OssoColor, idleHandle ? 0.25 : 0.14);
         Root.ToolTip = null;
@@ -201,7 +233,11 @@ public partial class OverlayWindow : Window
             bar.Fill = phase == OverlayPhase.Command ? Accent : Osso;
         }
 
-        if (phase == OverlayPhase.Hidden)
+        if (ShowsMeetingPill)
+        {
+            Root.Child = Side ? MeetingSideContent() : MeetingContent();
+        }
+        else if (phase == OverlayPhase.Hidden)
         {
             Root.Child = hovering ? (Side ? IdleSideContent() : IdleContent()) : null;
         }
@@ -214,6 +250,55 @@ public partial class OverlayWindow : Window
             Root.Child = Side ? StatusIcon() : BusyContent();
             if (Side) Root.ToolTip = Label;
         }
+    }
+
+    private UIElement MeetingContent()
+    {
+        var row = new DockPanel { Margin = new Thickness(11, 0, 3, 0), LastChildFill = false };
+        var stop = ActionButton("\uE71A", Accent, "Parar gravação da reunião", () => OnToggleMeeting(), 22);
+        DockPanel.SetDock(stop, Dock.Right);
+        row.Children.Add(stop);
+        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(RecordingDot());
+        var clock = Clock(time => Meeting.Clock(time.TotalSeconds), 12);
+        clock.Margin = new Thickness(7, 0, 0, 0);
+        left.Children.Add(clock);
+        row.Children.Add(left);
+        return row;
+    }
+
+    private UIElement MeetingSideContent()
+    {
+        var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var dot = RecordingDot();
+        dot.HorizontalAlignment = HorizontalAlignment.Center;
+        column.Children.Add(dot);
+        var minutes = Clock(time => ((int)time.TotalMinutes).ToString("00"), 11);
+        minutes.Margin = new Thickness(0, 5, 0, 0);
+        column.Children.Add(minutes);
+        column.Children.Add(Clock(time => time.Seconds.ToString("00"), 11));
+        var stop = ActionButton("\uE71A", Accent, "Parar gravação da reunião", () => OnToggleMeeting(), 22);
+        stop.Margin = new Thickness(0, 5, 0, 0);
+        column.Children.Add(stop);
+        return column;
+    }
+
+    private static Ellipse RecordingDot() => new()
+    {
+        Width = 8, Height = 8, Fill = Accent, VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    /// A mono time readout that MeetingElapsed updates in place.
+    private TextBlock Clock(Func<TimeSpan, string> format, double size)
+    {
+        var block = new TextBlock
+        {
+            Text = format(meetingElapsed ?? TimeSpan.Zero), FontSize = size, FontWeight = FontWeights.Medium, Foreground = Osso,
+            FontFamily = (FontFamily)Application.Current.FindResource("MonoFont"),
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        };
+        meetingClocks.Add((block, format));
+        return block;
     }
 
     private UIElement IdleContent()
@@ -342,11 +427,11 @@ public partial class OverlayWindow : Window
     }
 
     /// A 26×26 button with 6 pt corners (concentric with the bar's 10). A press that turns into a drag never clicks.
-    private Border ActionButton(string glyph, Brush fill, string help, Action action)
+    private Border ActionButton(string glyph, Brush fill, string help, Action action, double side = 26)
     {
         var button = new Border
         {
-            Width = 26, Height = 26, CornerRadius = new CornerRadius(6), Background = fill, Cursor = Cursors.Hand,
+            Width = side, Height = side, CornerRadius = new CornerRadius(6), Background = fill, Cursor = Cursors.Hand,
             ToolTip = help, Child = Glyph(glyph, Osso, 11), HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -367,6 +452,8 @@ public partial class OverlayWindow : Window
     private ContextMenu BuildMenu()
     {
         var menu = new ContextMenu();
+        menu.Items.Add(Item(IsMeetingRecording() ? "Parar gravação da reunião" : "Gravar reunião", () => OnToggleMeeting()));
+        menu.Items.Add(new Separator());
         menu.Items.Add(Item("Colar a última transcrição", () => OnPasteLast()));
 
         var microphone = new MenuItem { Header = "Microfone" };

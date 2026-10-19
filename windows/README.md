@@ -50,6 +50,15 @@ campo (botão, lista, área de trabalho ou pasta do Explorer) não cola nem mexe
 no histórico e a barra mostra "Clique num campo de texto e use {atalho} para colar". Quando não dá para saber (alguns
 navegadores e apps Electron), cola como antes. A área de transferência anterior é restaurada depois de cada colagem.
 
+## Reuniões
+
+Na tela **Reuniões** (ou pelo menu da bandeja, ou pelo clique direito na barra), **Gravar reunião** grava duas trilhas
+em `%LOCALAPPDATA%\Bkdict\meetings\<data-hora>\`: o microfone (**Você**) e o áudio do PC por WASAPI loopback
+(**Eles**), em 16 kHz mono. Durante a gravação a barra mostra `● tempo ■`, e ditar continua funcionando. Ao parar, o
+Bkdict acha os trechos com fala, transcreve cada um com o motor do ditado, tira o eco de quem está sem fone e gera o
+resumo (decisões, tarefas, pontos em aberto) com a IA de Modelos. Fechar o app no meio salva o que foi gravado e o
+processamento continua na próxima vez. Detalhes em [`docs/reunioes.md`](../docs/reunioes.md).
+
 ## Atalhos padrão
 
 O Windows não enxerga a tecla `Fn` (quem cuida dela é o próprio teclado), então `Ctrl + Win` faz o papel dela:

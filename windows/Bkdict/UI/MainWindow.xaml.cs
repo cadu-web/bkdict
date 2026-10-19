@@ -17,6 +17,7 @@ public partial class MainWindow : Window
         pages = new Dictionary<string, UserControl>
         {
             ["home"] = new HomePage(model),
+            ["meetings"] = new MeetingsPage(model),
             ["models"] = new ModelsPage(model),
             ["transforms"] = new TransformsPage(model),
             ["dictionary"] = new DictionaryPage(model),

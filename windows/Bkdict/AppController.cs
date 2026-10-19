@@ -6,6 +6,7 @@ using System.Media;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using Bkdict.Core;
 using Bkdict.Platform;
 using Bkdict.UI;
@@ -38,6 +39,12 @@ public sealed class AppController
     private Session? session;
     private int errorToken;
 
+    // Meetings (docs/reunioes.md).
+    private MeetingProcessor? processor;
+    private MeetingRecorder? meetingRecorder;
+    private DateTime meetingStartedAt;
+    private readonly DispatcherTimer meetingTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+
     public void Start()
     {
         AppModel.ApplyTheme(model.Theme);
@@ -45,6 +52,7 @@ public sealed class AppController
 
         recorder.LevelChanged += level => Application.Current.Dispatcher.InvokeAsync(() => overlay.Level = level);
         SetUpDictationBar();
+        SetUpMeetings();
         hotkey.OnAction = Handle;
         hotkey.IsRecording = () => session != null;
         hotkey.IsHandsFree = () => session?.HandsFree == true;
@@ -114,8 +122,91 @@ public sealed class AppController
         await model.Ollama.InstallAsync();
         if (model.AiProvider == LlmProvider.Ollama) await model.Ollama.StartAsync();
 
+        ResumeMeetings();
+
         if (await Updater.CheckAsync() is { } release)
             tray?.ShowUpdate(release.Version.ToString(), release.Url);
+    }
+
+    // MARK: - Meetings
+
+    private void SetUpMeetings()
+    {
+        processor = new MeetingProcessor(TranscribeAsync,
+            text => TextProcessor.Apply(text, model.Replacements, Array.Empty<Snippet>()));
+        model.ToggleMeeting = ToggleMeeting;
+        model.ResummarizeMeeting = meeting => _ = processor.ResummarizeAsync(meeting);
+        tray?.SetMeetingAction(ToggleMeeting);
+        overlay.OnToggleMeeting = ToggleMeeting;
+        overlay.IsMeetingRecording = () => model.IsMeetingRecording;
+        meetingTimer.Tick += (_, _) =>
+        {
+            var elapsed = DateTime.Now - meetingStartedAt;
+            model.MeetingElapsed = elapsed;
+            overlay.MeetingElapsed = elapsed;
+        };
+    }
+
+    /// Meetings left unfinished by a quit (or a crash) are processed again, one at a time.
+    private void ResumeMeetings()
+    {
+        if (processor == null) return;
+        foreach (var meeting in model.Meetings.Where(m => m != model.RecordingMeeting
+                     && m.Status is Meeting.Recording or Meeting.Transcribing or Meeting.Summarizing).ToList())
+        {
+            _ = processor.ProcessAsync(meeting);
+        }
+    }
+
+    private async void ToggleMeeting()
+    {
+        if (model.RecordingMeeting is { } meeting) await StopMeetingAsync(meeting);
+        else StartMeeting();
+    }
+
+    private void StartMeeting()
+    {
+        var meeting = Meeting.New(DateTimeOffset.Now);
+        var recording = new MeetingRecorder(meeting.MicPath, meeting.SystemPath);
+        try
+        {
+            System.IO.Directory.CreateDirectory(meeting.Folder);
+            recording.Start();
+        }
+        catch (Exception e)
+        {
+            Log.Write("Meeting start: " + e);
+            MeetingStore.Delete(meeting);
+            FlashError("Não foi possível gravar a reunião");
+            return;
+        }
+        meeting.SystemAudio = recording.SystemAudio;
+        MeetingStore.Save(meeting);
+        meetingRecorder = recording;
+        meetingStartedAt = DateTime.Now;
+        model.Meetings.Insert(0, meeting);
+        model.RecordingMeeting = meeting;
+        model.MeetingElapsed = TimeSpan.Zero;
+        overlay.MeetingElapsed = TimeSpan.Zero;
+        tray?.SetMeetingRecording(true);
+        meetingTimer.Start();
+        Play(Sound.Lock);
+    }
+
+    private async Task StopMeetingAsync(Meeting meeting)
+    {
+        var recording = meetingRecorder;
+        meetingRecorder = null;
+        meetingTimer.Stop();
+        model.RecordingMeeting = null;
+        overlay.MeetingElapsed = null;
+        tray?.SetMeetingRecording(false);
+        meeting.Duration = (DateTime.Now - meetingStartedAt).TotalSeconds;
+        Play(Sound.Stop);
+        if (recording != null) await recording.StopAsync();
+        meeting.Status = Meeting.Transcribing;
+        MeetingStore.Save(meeting);
+        if (processor != null) await processor.ProcessAsync(meeting);
     }
 
     /// The bar's buttons and menu, and the settings it follows.
@@ -143,6 +234,14 @@ public sealed class AppController
 
     public void Shutdown()
     {
+        // Quitting mid-meeting closes the files; the transcription runs on the next launch.
+        if (meetingRecorder is { } recording && model.RecordingMeeting is { } meeting)
+        {
+            meeting.Duration = (DateTime.Now - meetingStartedAt).TotalSeconds;
+            Task.Run(recording.StopAsync).Wait(3000);
+            meeting.Status = Meeting.Transcribing;
+            MeetingStore.Save(meeting);
+        }
         hotkey.Dispose();
         whisper.Stop();
         model.Ollama.Stop();

@@ -23,6 +23,9 @@ public static class Paths
     /// Ollama installed by the app.
     public static string OllamaBinaries => Path.Combine(LocalSupport, "ollama");
 
+    /// Recorded meetings (audio is large and machine-local, like Ollama): one folder per meeting.
+    public static string Meetings => Ensure(Path.Combine(LocalSupport, "meetings"));
+
     private static string Ensure(string path)
     {
         Directory.CreateDirectory(path);

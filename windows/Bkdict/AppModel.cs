@@ -60,6 +60,36 @@ public sealed class AppModel : ObservableObject
     public ModelManager Models { get; } = new();
     public OllamaManager Ollama { get; } = new();
 
+    // MARK: - Meetings (docs/reunioes.md)
+
+    private Meeting? recordingMeeting;
+    private TimeSpan meetingElapsed;
+
+    /// Newest first, as on disk.
+    public ObservableCollection<Meeting> Meetings { get; } = new(MeetingStore.LoadAll());
+
+    /// The meeting being recorded, if any.
+    public Meeting? RecordingMeeting
+    {
+        get => recordingMeeting;
+        set { if (SetField(ref recordingMeeting, value)) OnPropertyChanged(nameof(IsMeetingRecording)); }
+    }
+
+    public bool IsMeetingRecording => recordingMeeting != null;
+
+    public TimeSpan MeetingElapsed { get => meetingElapsed; set => SetField(ref meetingElapsed, value); }
+
+    /// Set by the controller: start or stop recording a meeting; write a meeting's summary again.
+    public Action? ToggleMeeting { get; set; }
+    public Action<Meeting>? ResummarizeMeeting { get; set; }
+
+    public void DeleteMeeting(Meeting meeting)
+    {
+        if (meeting == recordingMeeting) return;
+        MeetingStore.Delete(meeting);
+        Meetings.Remove(meeting);
+    }
+
     public event Action? ShortcutsChanged;
     /// Raised when the transcription engine, local model or its API key changes.
     public event Action? EngineChanged;
