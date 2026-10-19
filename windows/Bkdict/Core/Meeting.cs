@@ -15,15 +15,16 @@ public sealed class MeetingSegment
     public double Start { get; set; }
     public double End { get; set; }
     public string Text { get; set; } = "";
-
-    [JsonIgnore] public string SpeakerLabel => Source == "them" ? "Eles" : "Você";
+    /// The voice of a "them" segment (phase 3), numbered from 0 by first appearance; null when not separated.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Speaker { get; set; }
 }
 
 /// A recorded meeting and its transcript, saved as meeting.json next to mic.wav and system.wav.
 public sealed class Meeting : ObservableObject
 {
-    public const string Recording = "recording", Transcribing = "transcribing", Summarizing = "summarizing",
-                        Ready = "ready", Failed = "failed";
+    public const string Recording = "recording", Transcribing = "transcribing", Separating = "separating",
+                        Summarizing = "summarizing", Ready = "ready", Failed = "failed";
 
     private string status = Recording;
     private double progress;
@@ -32,6 +33,7 @@ public sealed class Meeting : ObservableObject
     private string? summary;
     private List<MeetingSegment> segments = new();
     private bool systemAudio = true;
+    private string? separatingDetail;
 
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
@@ -81,6 +83,32 @@ public sealed class Meeting : ObservableObject
         set => SetField(ref summary, value);
     }
 
+    /// Names of the voices by number; "" means the default "Pessoa N".
+    public List<string> Speakers { get; set; } = new();
+
+    /// While separating: what is happening ("Baixando o separador de vozes 40%"); null for the default label.
+    [JsonIgnore]
+    public string? SeparatingDetail
+    {
+        get => separatingDetail;
+        set { if (SetField(ref separatingDetail, value)) OnPropertyChanged(nameof(StatusLabel)); }
+    }
+
+    /// "Pessoa 2", or the name given to that voice.
+    public string VoiceName(int speaker) =>
+        speaker < Speakers.Count && Speakers[speaker].Trim().Length > 0 ? Speakers[speaker].Trim() : $"Pessoa {speaker + 1}";
+
+    /// "Você", the voice's name, or "Eles" for the others when the voices were not separated.
+    public string LabelFor(MeetingSegment segment) =>
+        segment.Source != "them" ? "Você" : segment.Speaker is { } speaker ? VoiceName(speaker) : "Eles";
+
+    /// Tells the views the segments changed in place (renamed or merged voices).
+    public void NotifySegmentsChanged()
+    {
+        OnPropertyChanged(nameof(Segments));
+        OnPropertyChanged(nameof(Speakers));
+    }
+
     [JsonIgnore] public string Folder => Path.Combine(Paths.Meetings, Id);
     [JsonIgnore] public string MicPath => Path.Combine(Folder, "mic.wav");
     [JsonIgnore] public string SystemPath => Path.Combine(Folder, "system.wav");
@@ -90,6 +118,7 @@ public sealed class Meeting : ObservableObject
     {
         Recording => "Gravando",
         Transcribing => $"Transcrevendo {(int)Math.Round(progress * 100)}%",
+        Separating => separatingDetail ?? "Separando as vozes",
         Summarizing => "Resumindo",
         Failed => "Falhou: " + (error ?? "erro desconhecido"),
         _ => systemAudio ? "Pronta" : "Só o seu microfone",
@@ -104,13 +133,13 @@ public sealed class Meeting : ObservableObject
         return time.TotalHours >= 1 ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}" : $"{time.Minutes:00}:{time.Seconds:00}";
     }
 
-    /// The transcript as "[mm:ss] Você|Eles: texto", one segment per line: what is copied and what the summary reads.
+    /// The transcript as "[mm:ss] Você|<voz>|Eles: texto", one segment per line: what is copied and what the summary reads.
     public string TranscriptText()
     {
         var builder = new StringBuilder();
         foreach (var segment in segments)
         {
-            builder.Append('[').Append(Clock(segment.Start)).Append("] ").Append(segment.SpeakerLabel).Append(": ")
+            builder.Append('[').Append(Clock(segment.Start)).Append("] ").Append(LabelFor(segment)).Append(": ")
                    .AppendLine(segment.Text);
         }
         return builder.ToString().TrimEnd();

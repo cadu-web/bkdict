@@ -92,22 +92,22 @@ public static class Llm
     // rule that "Eles" lines belong to the others, keep small models from skipping sections or giving the others'
     // tasks to "você".
     private const string MeetingInstructions =
-        "Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \"[mm:ss] Você: …\" é a própria pessoa; \"[mm:ss] Eles: …\" são os outros participantes. Quem diz \"eu faço\" numa linha \"Eles\" é um participante, não você.\n\n" +
-        "Escreva em segunda pessoa: \"você\" para quem gravou e \"os participantes\" para os outros (ou o nome, se alguém for chamado pelo nome). Nas Tarefas, comece cada linha com o dono: \"Você:\" ou \"Participantes:\".\n\n" +
+        "Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \"[mm:ss] Quem: …\". \"Você\" é a pessoa que gravou; as outras falas vêm com o nome da pessoa ou \"Pessoa N\" (\"Eles\" quando não foi possível separar as vozes). Quem diz \"eu faço\" numa fala de outra pessoa é essa pessoa, não você.\n\n" +
+        "Escreva em segunda pessoa: \"você\" para quem gravou, e os outros pelo nome (ou \"os participantes\"). Nas Tarefas, comece cada linha com o dono: \"Você:\", o nome da pessoa, ou \"Participantes:\" quando não der para saber.\n\n" +
         "Responda preenchendo exatamente o modelo que vem depois da transcrição: as quatro seções, nessa ordem, sem nada antes ou depois. Use só o que foi dito; não invente nomes, datas, números nem decisões. Seção sem conteúdo leva \"- Nenhuma.\".";
 
     private const string MeetingTemplate =
         "Modelo a preencher:\n" +
         "## Resumo\n(3 a 6 frases sobre o que foi tratado)\n\n" +
         "## Decisões\n- (cada decisão tomada, uma por linha)\n\n" +
-        "## Tarefas\n- (Você: ou Participantes:, o quê, e o prazo se foi dito)\n\n" +
+        "## Tarefas\n- (Você:, o nome da pessoa ou Participantes:, o quê, e o prazo se foi dito)\n\n" +
         "## Pontos em aberto\n- (o que ficou sem resposta ou sem decisão)";
 
     private const string MeetingNotesInstructions =
-        "Você recebe um trecho da transcrição de uma reunião, uma fala por linha no formato " +
-        "[mm:ss] Você|Eles: texto (\"Você\" é quem gravou; \"Eles\", os outros participantes). Anote, no idioma " +
-        "da reunião e só com o que foi dito, os assuntos, as decisões, as tarefas (Você: ou Participantes:, o " +
-        "quê, prazo) e os pontos em aberto deste trecho, em tópicos curtos.";
+        "Você recebe um trecho da transcrição de uma reunião, uma fala por linha no formato [mm:ss] Quem: texto " +
+        "(\"Você\" é quem gravou; as outras falas vêm com o nome da pessoa, \"Pessoa N\" ou \"Eles\"). Anote, no idioma " +
+        "da reunião e só com o que foi dito, os assuntos, as decisões, as tarefas (Você:, o nome da pessoa ou " +
+        "Participantes:, o quê, prazo) e os pontos em aberto deste trecho, em tópicos curtos.";
 
     /// The meeting summary in Markdown (docs/reunioes.md). A transcript over 8,000 characters is noted in parts
     /// first: small local models have a short context window and would otherwise read only its beginning.

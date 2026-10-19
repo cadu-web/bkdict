@@ -3,7 +3,7 @@ import Foundation
 
 /// A recorded meeting, stored as `meeting.json` next to its two audio tracks (see docs/reunioes.md).
 struct Meeting: Codable, Identifiable, Hashable {
-    enum Status: String, Codable { case recording, transcribing, summarizing, ready, failed }
+    enum Status: String, Codable { case recording, transcribing, separating, summarizing, ready, failed }
 
     struct Segment: Codable, Hashable {
         enum Source: String, Codable { case me, them }
@@ -11,6 +11,8 @@ struct Meeting: Codable, Identifiable, Hashable {
         var start: TimeInterval
         var end: TimeInterval
         var text: String
+        /// The voice, for "Eles" segments once the track was split by voice (phase 3).
+        var speaker: Int?
     }
 
     let id: String
@@ -24,6 +26,8 @@ struct Meeting: Codable, Identifiable, Hashable {
     var progress = 0.0
     var error: String?
     var segments: [Segment] = []
+    /// A name per voice; "" keeps the default "Pessoa N". Optional so meetings saved before phase 3 still load.
+    var speakers: [String]?
     var summary: String?
 
     var folder: URL { MeetingCenter.directory.appendingPathComponent(id, isDirectory: true) }
@@ -32,8 +36,20 @@ struct Meeting: Codable, Identifiable, Hashable {
 
     /// `[mm:ss] Você: …`, one line per segment; the format the summary reads and "Copiar transcrição" copies.
     var transcript: String {
-        segments.map { "[\(Self.clock($0.start))] \($0.source == .me ? "Você" : "Eles"): \($0.text)" }
-            .joined(separator: "\n")
+        segments.map { "[\(Self.clock($0.start))] \(label(for: $0)): \($0.text)" }.joined(separator: "\n")
+    }
+
+    /// "Você", the voice's name, "Pessoa N", or "Eles" when the voices were not split.
+    func label(for segment: Segment) -> String {
+        guard segment.source == .them else { return "Você" }
+        guard let speaker = segment.speaker else { return "Eles" }
+        return name(of: speaker)
+    }
+
+    func name(of speaker: Int) -> String {
+        let names = speakers ?? []
+        let name = speaker < names.count ? names[speaker].trimmingCharacters(in: .whitespaces) : ""
+        return name.isEmpty ? "Pessoa \(speaker + 1)" : name
     }
 
     static func clock(_ seconds: TimeInterval) -> String {
@@ -214,6 +230,7 @@ final class MeetingCenter: ObservableObject {
                     return
                 }
             }
+            if meeting.status == .separating { await separate(&meeting) }
             await summarize(&meeting)
         }
     }
@@ -241,8 +258,76 @@ final class MeetingCenter: ObservableObject {
             if index % 3 == 0 || index == parts.count - 1 { save(meeting) }
         }
         meeting.segments = SpeechDetector.removingEcho(segments)
-        meeting.status = .summarizing
+        meeting.status = .separating
         meeting.progress = 1
+        save(meeting)
+    }
+
+    /// Splits "Eles" by voice. A failure leaves the meeting with "Eles", as before phase 3.
+    private func separate(_ meeting: inout Meeting) async {
+        if meeting.segments.contains(where: { $0.source == .them }) {
+            do {
+                let turns = try await Diarizer.turns(in: meeting.systemURL)
+                let (segments, voices) = Diarizer.assign(meeting.segments, turns: turns)
+                meeting.segments = segments
+                meeting.speakers = Array(repeating: "", count: voices)
+            } catch {
+                NSLog("Bkdict: separador de vozes: \(error.localizedDescription)")
+            }
+        }
+        meeting.status = .summarizing
+        save(meeting)
+    }
+
+    // MARK: - Voices
+
+    func rename(_ id: String, speaker: Int, to name: String) {
+        guard var meeting = meetings.first(where: { $0.id == id }) else { return }
+        var names = meeting.speakers ?? []
+        while names.count <= speaker { names.append("") }
+        names[speaker] = name.trimmingCharacters(in: .whitespaces)
+        meeting.speakers = names
+        save(meeting)
+    }
+
+    /// Gives one segment to a voice; `nil` creates a new voice for it.
+    func setSpeaker(_ id: String, segment index: Int, to speaker: Int?) {
+        guard var meeting = meetings.first(where: { $0.id == id }), meeting.segments.indices.contains(index) else { return }
+        var names = meeting.speakers ?? []
+        let voice = speaker ?? names.count
+        while names.count <= voice { names.append("") }
+        meeting.speakers = names
+        meeting.segments[index].speaker = voice
+        // A voice left with no lines goes away, and the voices after it move up.
+        for empty in (0..<names.count).reversed() where !meeting.segments.contains(where: { $0.speaker == empty }) {
+            meeting.segments = meeting.segments.map { segment in
+                var copy = segment
+                if let voice = segment.speaker, voice > empty { copy.speaker = voice - 1 }
+                return copy
+            }
+            meeting.speakers?.remove(at: empty)
+        }
+        save(meeting)
+    }
+
+    /// Moves a voice's segments to another voice and drops it, renumbering the voices after it.
+    func merge(_ id: String, speaker: Int, into target: Int) {
+        guard speaker != target, var meeting = meetings.first(where: { $0.id == id }) else { return }
+        let destination = target > speaker ? target - 1 : target
+        meeting.segments = meeting.segments.map { segment in
+            var copy = segment
+            if let voice = segment.speaker {
+                copy.speaker = voice == speaker ? destination : voice > speaker ? voice - 1 : voice
+            }
+            return copy
+        }
+        var names = meeting.speakers ?? []
+        if speaker < names.count {
+            let dropped = names.remove(at: speaker)
+            // Keep the merged voice's name when the destination has none.
+            if destination < names.count, names[destination].isEmpty { names[destination] = dropped }
+        }
+        meeting.speakers = names
         save(meeting)
     }
 

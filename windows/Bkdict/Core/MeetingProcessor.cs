@@ -8,7 +8,8 @@ using Bkdict.Platform;
 namespace Bkdict.Core;
 
 /// Turns a recorded meeting into a transcript and a summary (docs/reunioes.md): speech segments of each track,
-/// transcribed in time order with the dictation engine, echo removed, dictionary corrections, then the summary.
+/// transcribed in time order with the dictation engine, echo removed, dictionary corrections, the voices of the
+/// "them" track separated (phase 3), then the summary.
 /// Runs one meeting at a time; every step saves meeting.json, so a restart resumes where it was.
 public sealed class MeetingProcessor
 {
@@ -29,7 +30,10 @@ public sealed class MeetingProcessor
         await queue.WaitAsync();
         try
         {
-            await TranscribeAsync(meeting);
+            // Resumes from the step it stopped at: a transcript already made is not made again.
+            bool transcribed = meeting.Segments.Count > 0 && meeting.Status is Meeting.Separating or Meeting.Summarizing;
+            if (!transcribed) await TranscribeAsync(meeting);
+            if (meeting.Status != Meeting.Summarizing || !transcribed) await SeparateAsync(meeting);
             await SummarizeAsync(meeting);
         }
         catch (Exception e)
@@ -98,6 +102,39 @@ public sealed class MeetingProcessor
             .OrderBy(s => s.Start)
             .ToList();
         meeting.Progress = 1;
+    }
+
+    /// Names the voices of the "them" track. A failure only leaves the others as "Eles".
+    private async Task SeparateAsync(Meeting meeting)
+    {
+        meeting.Speakers = new List<string>();
+        foreach (var segment in meeting.Segments) segment.Speaker = null;
+        if (!meeting.SystemAudio || !File.Exists(meeting.SystemPath) || meeting.Segments.All(s => s.Source != "them")) return;
+
+        meeting.Status = Meeting.Separating;
+        MeetingStore.Save(meeting);
+        try
+        {
+            if (!Diarizer.IsInstalled)
+            {
+                await Diarizer.InstallAsync(p => meeting.SeparatingDetail = $"Baixando o separador de vozes {(int)Math.Round(p * 100)}%");
+                meeting.SeparatingDetail = null;
+            }
+            var turns = await Diarizer.SeparateAsync(meeting.SystemPath);
+            int voices = Diarizer.Assign(meeting.Segments, turns);
+            meeting.Speakers = Enumerable.Repeat("", voices).ToList();
+        }
+        catch (Exception e)
+        {
+            foreach (var segment in meeting.Segments) segment.Speaker = null;
+            meeting.Speakers = new List<string>();
+            Log.Write($"Meeting {meeting.Id} voices: {e.Message}");
+        }
+        finally
+        {
+            meeting.SeparatingDetail = null;
+        }
+        meeting.NotifySegmentsChanged();
     }
 
     private async Task SummarizeAsync(Meeting meeting)

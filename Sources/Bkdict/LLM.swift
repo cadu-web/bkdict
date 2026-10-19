@@ -83,11 +83,18 @@ enum LLM {
     /// Tested with the Qwen 2.5 3B: a template to fill, and the rule that "Eles" lines belong to the others, keep
     /// small models from skipping sections or giving the others' tasks to "você".
     private static let meetingInstructions = """
-    Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: "[mm:ss] Você: …" é a própria pessoa; "[mm:ss] Eles: …" são os outros participantes. Quem diz "eu faço" numa linha "Eles" é um participante, não você.
+    Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: \
+    "[mm:ss] Você: …" é a própria pessoa; as outras falas vêm com o nome da pessoa ou "Pessoa N" \
+    ("Eles" quando não foi possível separar as vozes). Quem diz "eu faço" numa fala de outra pessoa é \
+    essa pessoa, não você.
 
-    Escreva em segunda pessoa: "você" para quem gravou e "os participantes" para os outros (ou o nome, se alguém for chamado pelo nome). Nas Tarefas, comece cada linha com o dono: "Você:" ou "Participantes:".
+    Escreva em segunda pessoa: "você" para quem gravou e os nomes (ou "os participantes") para os outros. \
+    Nas Tarefas, comece cada linha com o dono: "Você:", o nome da pessoa, ou "Participantes:" quando não \
+    der para saber.
 
-    Responda preenchendo exatamente o modelo que vem depois da transcrição: as quatro seções, nessa ordem, sem nada antes ou depois. Use só o que foi dito; não invente nomes, datas, números nem decisões. Seção sem conteúdo leva "- Nenhuma.".
+    Responda preenchendo exatamente o modelo que vem depois da transcrição: as quatro seções, nessa ordem, \
+    sem nada antes ou depois. Use só o que foi dito; não invente nomes, datas, números nem decisões. Seção \
+    sem conteúdo leva "- Nenhuma.".
     """
 
     private static let meetingTemplate = """
@@ -99,7 +106,7 @@ enum LLM {
     - (cada decisão tomada, uma por linha)
 
     ## Tarefas
-    - (Você: ou Participantes:, o quê, e o prazo se foi dito)
+    - (Você:, o nome da pessoa ou Participantes:, o quê, e o prazo se foi dito)
 
     ## Pontos em aberto
     - (o que ficou sem resposta ou sem decisão)
@@ -107,9 +114,9 @@ enum LLM {
 
     private static let meetingNotesInstructions = """
     Você recebe um trecho da transcrição de uma reunião, uma fala por linha no formato \
-    [mm:ss] Você|Eles: texto ("Você" é quem gravou; "Eles", os outros participantes). Anote, no idioma \
-    da reunião e só com o que foi dito, os assuntos, as decisões, as tarefas (Você: ou Participantes:, o \
-    quê, prazo) e os pontos em aberto deste trecho, em tópicos curtos.
+    [mm:ss] Nome: texto ("Você" é quem gravou; os outros vêm com o nome, "Pessoa N" ou "Eles"). Anote, no \
+    idioma da reunião e só com o que foi dito, os assuntos, as decisões, as tarefas (dono, o quê, prazo) e \
+    os pontos em aberto deste trecho, em tópicos curtos.
     """
 
     /// The meeting summary in Markdown. A long transcript is noted in parts first: small local models have a

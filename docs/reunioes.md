@@ -134,7 +134,72 @@ Uma chamada está acontecendo quando **um app de reunião está usando o microfo
   "×" continua gravando. Gravações iniciadas à mão também recebem o convite quando a chamada que estava ativa acaba.
 - Ajustes: linha "Detectar reuniões" — "Oferece gravar quando uma chamada começa no Zoom, Teams, Meet e outros".
 
-## Fora das fases 1 e 2
+# Fase 3 — quem é quem do lado de lá
 
-Separar as vozes do lado de lá, nomes pelo Zoom/Meet, calendário, perguntar sobre as
-reuniões.
+A trilha **Eles** é separada por voz (`Pessoa 1`, `Pessoa 2`…), e a pessoa dá nome a cada voz.
+
+## Separador de vozes
+
+[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) v1.13.8, programa `sherpa-onnx-offline-speaker-diarization`,
+instalado como as outras dependências (download na primeira reunião que precisar, verificado por SHA-256, em
+`<suporte>/diarization/`):
+
+| Peça | Arquivo |
+|---|---|
+| Programa, Mac | `v1.13.8/sherpa-onnx-v1.13.8-osx-universal2-shared-no-tts.tar.bz2` (39 MB) |
+| Programa, Windows | `v1.13.8/sherpa-onnx-v1.13.8-win-x64-shared-MT-Release-no-tts.tar.bz2` (23 MB; `tar.exe` do Windows) |
+| Segmentação | `speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2` → `model.onnx` (o completo, não o int8) |
+| Voz | `speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx` (arquivo solto) |
+
+(URLs em `https://github.com/k2-fsa/sherpa-onnx/releases/download/<pasta>/<arquivo>`.)
+
+SHA-256: Mac `636b439c75031d892636dfdd2000a0233e4a30a08b030697e91f8aa389431b83`; Windows
+`4b0a94f7b5c606b1b64a19a831c2127559e4b3d34e195465ebc7be73d9ed4783`; segmentação
+`24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488`; voz
+`357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b`. Os pacotes trazem tudo numa pasta
+`sherpa-onnx-v1.13.8-…/` com o programa em `bin/` (no Windows, `bin/` já tem as DLLs ao lado do `.exe`).
+
+Execução sobre `system.wav`, depois da transcrição, só se a reunião tem trechos **Eles**:
+
+```
+sherpa-onnx-offline-speaker-diarization --clustering.cluster-threshold=0.4 \
+  --segmentation.pyannote-model=<model.onnx> --embedding.model=<campplus.onnx> system.wav
+```
+
+A saída tem linhas `0.031 -- 5.043 speaker_00`. Cada trecho **Eles** fica com a voz que mais se sobrepõe a ele no
+tempo; trechos sem sobreposição ficam sem voz. As vozes são renumeradas pela ordem em que aparecem (0, 1, 2…).
+Limiar 0,4: com gente de verdade separa bem; com vozes parecidas às vezes divide uma pessoa em duas — o que se
+resolve juntando na tela (o contrário, desfazer uma mistura, não teria como).
+
+Estado novo entre `transcribing` e `summarizing`: `separating` (`Separando as vozes`). Falha do separador não falha a
+reunião: segue sem vozes, com `Eles` como antes.
+
+## Dados
+
+- `segments[].speaker`: número da voz (só em trechos `them`), ou ausente.
+- `speakers`: lista de nomes por número de voz; `""` = nome padrão `Pessoa N` (N = número + 1).
+
+## O que a pessoa vê
+
+- Transcrição: os balões dos outros mostram o nome da voz (`Pessoa 1` ou o nome dado) no lugar de `Eles`, cada voz
+  com uma cor discreta própria (tons neutros, não o Bordô, que é de "Você").
+- Acima da conversa, o painel **Vozes**: um item por voz com ▶ (toca até 6 s da fala mais longa daquela voz, tirados
+  de `system.wav`), o nome editável (salva ao sair do campo / Enter) e **Juntar com…** (menu com as outras vozes; os
+  trechos passam para a escolhida e a voz some, renumerando as que vêm depois).
+- Clique direito num balão dos outros: **Esta fala é de…** com cada voz e **Nova voz** — muda só aquele trecho
+  (para quando o separador erra uma fala, e não uma voz inteira).
+- Depois de dar nomes, juntar ou mudar falas, aparece **Refazer o resumo com os nomes**.
+- O resumo usa os nomes: a transcrição enviada à IA traz `[mm:ss] Você: …` e `[mm:ss] <nome ou Pessoa N>: …`;
+  a instrução passa a dizer que "Você" é quem gravou e que os outros nomes (ou `Pessoa N`) são participantes, e as
+  tarefas começam com `Você:` ou com o nome de quem vai fazer (`Participantes:` quando não dá para saber).
+  "Copiar transcrição" usa os mesmos rótulos.
+
+## Fora da fase 3
+
+Nomes automáticos pelo Zoom/Meet: exigem ler a interface de cada app de chamada durante a reunião (no navegador, o
+Chrome só expõe a página a apps assistivos com uma extensão), e não dá para acertar sem chamadas reais para testar.
+Fica para quando houver como testar; os convidados do calendário (fase 4) vão sugerir nomes.
+
+## Fora das fases 1, 2 e 3
+
+Calendário, perguntar sobre as reuniões, tarefas como ações (fase 4).

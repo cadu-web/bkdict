@@ -156,7 +156,7 @@ public sealed class AppController
     {
         if (processor == null) return;
         foreach (var meeting in model.Meetings.Where(m => m != model.RecordingMeeting
-                     && m.Status is Meeting.Recording or Meeting.Transcribing or Meeting.Summarizing).ToList())
+                     && m.Status is Meeting.Recording or Meeting.Transcribing or Meeting.Separating or Meeting.Summarizing).ToList())
         {
             _ = processor.ProcessAsync(meeting);
         }

@@ -33,22 +33,54 @@ final class Dependency: ObservableObject, @unchecked Sendable {
         fallbacks: ["/Applications/Ollama.app/Contents/Resources/ollama", "/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"]
     )
 
+    /// sherpa-onnx's speaker diarization (meetings, phase 3): the program and its two models, fetched on first use.
+    static let diarizer = Dependency(
+        title: "separador de vozes",
+        folder: "diarization/program",
+        executable: "sherpa-onnx-v1.13.8-osx-universal2-shared-no-tts/bin/sherpa-onnx-offline-speaker-diarization",
+        archive: URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-osx-universal2-shared-no-tts.tar.bz2")!,
+        sha256: "636b439c75031d892636dfdd2000a0233e4a30a08b030697e91f8aa389431b83",
+        fallbacks: []
+    )
+    static let segmentationModel = Dependency(
+        title: "modelo de segmentação",
+        folder: "diarization/segmentation",
+        executable: "sherpa-onnx-pyannote-segmentation-3-0/model.onnx",
+        archive: URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2")!,
+        sha256: "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488",
+        fallbacks: []
+    )
+    static let voiceModel = Dependency(
+        title: "modelo de voz",
+        folder: "diarization/voice",
+        executable: "campplus.onnx",
+        archive: URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx")!,
+        sha256: "357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b",
+        fallbacks: [],
+        isArchive: false
+    )
+
     let title: String
     private let folder: String
+    /// The file that marks the install as done, relative to the folder (a program, or a model).
     private let executable: String
     private let archive: URL
     private let sha256: String?
     private let fallbacks: [String]
+    /// False for a single file (a model) saved as is, rather than an archive to unpack.
+    private let isArchive: Bool
 
     @Published private(set) var state: State
 
-    private init(title: String, folder: String, executable: String, archive: URL, sha256: String?, fallbacks: [String]) {
+    private init(title: String, folder: String, executable: String, archive: URL, sha256: String?, fallbacks: [String],
+                 isArchive: Bool = true) {
         self.title = title
         self.folder = folder
         self.executable = executable
         self.archive = archive
         self.sha256 = sha256
         self.fallbacks = fallbacks
+        self.isArchive = isArchive
         let present = Self.locate(folder: folder, executable: executable, fallbacks: fallbacks) != nil
         _state = Published(initialValue: present ? .installed : .missing)
     }
@@ -64,7 +96,7 @@ final class Dependency: ObservableObject, @unchecked Sendable {
 
     private static func locate(folder: String, executable: String, fallbacks: [String]) -> String? {
         let installed = Settings.supportDirectory.appendingPathComponent(folder).appendingPathComponent(executable).path
-        return ([installed] + fallbacks).first(where: FileManager.default.isExecutableFile)
+        return ([installed] + fallbacks).first(where: FileManager.default.fileExists)
     }
 
     /// Downloads and unpacks the tool. Safe to call repeatedly: it returns at once if the tool is there or on its way.
@@ -78,7 +110,7 @@ final class Dependency: ObservableObject, @unchecked Sendable {
         state = .installing(0)
 
         let fileManager = FileManager.default
-        let staging = Settings.supportDirectory.appendingPathComponent(".\(folder)-install", isDirectory: true)
+        let staging = Settings.supportDirectory.appendingPathComponent(".\(folder.replacingOccurrences(of: "/", with: "-"))-install", isDirectory: true)
         do {
             let progress = DownloadProgress { [weak self] fraction in
                 Task { @MainActor in
@@ -100,11 +132,16 @@ final class Dependency: ObservableObject, @unchecked Sendable {
             // Unpack next to the final folder and swap it in only when complete, so a failed install leaves nothing half-done.
             try? fileManager.removeItem(at: staging)
             try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
-            try await Self.untar(file, into: staging)
-            guard fileManager.isExecutableFile(atPath: staging.appendingPathComponent(executable).path) else {
+            if isArchive {
+                try await Self.untar(file, into: staging)
+            } else {
+                try fileManager.copyItem(at: file, to: staging.appendingPathComponent(executable))
+            }
+            guard fileManager.fileExists(atPath: staging.appendingPathComponent(executable).path) else {
                 throw InstallError("o pacote não tem o \(executable)")
             }
             try? fileManager.removeItem(at: directory)
+            try fileManager.createDirectory(at: directory.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fileManager.moveItem(at: staging, to: directory)
             state = .installed
         } catch {
@@ -116,7 +153,8 @@ final class Dependency: ObservableObject, @unchecked Sendable {
     private static func untar(_ archive: URL, into directory: URL) async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        process.arguments = ["-xzf", archive.path, "-C", directory.path]
+        // -x without -z: tar detects gzip and bzip2 by itself (whisper and Ollama ship .tgz, sherpa-onnx .tar.bz2).
+        process.arguments = ["-xf", archive.path, "-C", directory.path]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in

@@ -61,6 +61,8 @@ processamento continua na próxima vez. Detalhes em [`docs/reunioes.md`](../docs
 
 Com **Detectar reuniões** ligado (Ajustes), quando Zoom, Teams, Webex, Slack, Discord ou um navegador com Meet/Teams/Zoom aberto passa a usar o microfone, a barra oferece **Gravar**; quando a chamada acaba, oferece **Parar e resumir**.
 
+Os outros participantes são separados por voz (`Pessoa 1`, `Pessoa 2`…) pelo [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), baixado na primeira reunião para `%LOCALAPPDATA%\Bkdict\diarization`; no painel **Vozes** da transcrição dá para ouvir cada voz, dar nome e juntar duas que são a mesma pessoa.
+
 ## Atalhos padrão
 
 O Windows não enxerga a tecla `Fn` (quem cuida dela é o próprio teclado), então `Ctrl + Win` faz o papel dela:

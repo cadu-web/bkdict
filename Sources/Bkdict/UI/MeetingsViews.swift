@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// Meetings: record one, then read its summary and its transcript (Você / Eles).
@@ -215,6 +216,7 @@ private struct StatusPill: View {
         switch meeting.status {
         case .recording: "Gravando"
         case .transcribing: "Transcrevendo \(Int(meeting.progress * 100))%"
+        case .separating: "Separando as vozes"
         case .summarizing: "Resumindo"
         case .failed: "Falhou"
         case .ready: meeting.systemAudio ? "Pronta" : "Só o seu microfone"
@@ -259,6 +261,8 @@ private struct MeetingDetail: View {
     let back: () -> Void
     @State private var tab = Tab.summary
     @State private var confirmDelete = false
+    /// A voice was renamed or merged since the summary was written.
+    @State private var renamed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -367,8 +371,29 @@ private struct MeetingDetail: View {
                 Text("Nenhuma fala foi captada.").foregroundStyle(Theme.secondary)
             }
         } else {
-            Conversation(segments: meeting.segments)
-                .transition(.opacity.combined(with: .offset(y: 8)))
+            VStack(alignment: .leading, spacing: 16) {
+                if let count = meeting.speakers?.count, count > 0 {
+                    VoicesPanel(meetings: meetings, meeting: meeting, renamed: $renamed)
+                }
+                if renamed && meeting.status == .ready {
+                    HStack(spacing: 10) {
+                        Image(systemName: "sparkles").foregroundStyle(Theme.accent)
+                        Text("Os nomes mudaram.").foregroundStyle(Theme.text)
+                        Button("Refazer o resumo com os nomes") {
+                            meetings.resummarize(meeting.id)
+                            renamed = false
+                            tab = .summary
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                    }
+                    .transition(.opacity)
+                }
+                Conversation(meeting: meeting) { index, speaker in
+                    meetings.setSpeaker(meeting.id, segment: index, to: speaker)
+                    renamed = true
+                }
+            }
+            .transition(.opacity.combined(with: .offset(y: 8)))
         }
     }
 
@@ -490,7 +515,7 @@ private struct ProgressLine: View {
                 ProgressView().controlSize(.small)
                 Text(meeting.status == .transcribing
                      ? "Transcrevendo o que cada um disse… \(Int(meeting.progress * 100))%"
-                     : "Escrevendo o resumo…")
+                     : meeting.status == .separating ? "Separando as vozes dos participantes…" : "Escrevendo o resumo…")
                     .font(Theme.body(13, .medium))
                     .foregroundStyle(Theme.text)
                     .contentTransition(.numericText())
@@ -663,20 +688,36 @@ private struct OwnerChip: View {
 
 // MARK: - Transcript
 
-/// The transcript as a conversation: what you said on the right, the others on the left.
+/// A discreet color per voice, so the others' bubbles tell people apart. Never the Bordô, which is "Você".
+enum VoiceColors {
+    static let palette: [Color] = [
+        Color(light: 0x4F6577, dark: 0x8FA7BA), Color(light: 0x5E6F4E, dark: 0x9FB38C), Color(light: 0x7A6A4C, dark: 0xC2AE86),
+        Color(light: 0x66557A, dark: 0xA996BF), Color(light: 0x4C7470, dark: 0x8BB8B2),
+    ]
+
+    static func color(_ speaker: Int?) -> Color {
+        guard let speaker else { return Theme.text }
+        return palette[speaker % palette.count]
+    }
+}
+
+/// The transcript as a conversation: what you said on the right, the others on the left, each voice named.
 private struct Conversation: View {
-    let segments: [Meeting.Segment]
+    let meeting: Meeting
+    /// Moves one of the others' segments to a voice (nil: a new voice).
+    let reassign: (Int, Int?) -> Void
 
     var body: some View {
+        let segments = meeting.segments
         VStack(spacing: 6) {
             ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
                 let mine = segment.source == .me
-                let first = index == 0 || segments[index - 1].source != segment.source
+                let first = index == 0 || segments[index - 1].source != segment.source || segments[index - 1].speaker != segment.speaker
+                let color = mine ? Theme.accent : VoiceColors.color(segment.speaker)
                 VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
                     if first {
                         HStack(spacing: 6) {
-                            Text(mine ? "Você" : "Eles").font(Theme.body(12, .semibold))
-                                .foregroundStyle(mine ? Theme.accent : Theme.text)
+                            Text(meeting.label(for: segment)).font(Theme.body(12, .semibold)).foregroundStyle(color)
                             Text(Meeting.clock(segment.start)).font(Theme.mono(10)).foregroundStyle(Theme.secondary)
                         }
                         .padding(.top, index == 0 ? 0 : 10)
@@ -687,14 +728,156 @@ private struct Conversation: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: Theme.radius).fill(mine ? Theme.accentTint : Theme.card))
-                        .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(mine ? Color.clear : Theme.border))
+                        .background(RoundedRectangle(cornerRadius: Theme.radius)
+                            .fill(mine ? Theme.accentTint : segment.speaker == nil ? Theme.card : color.opacity(0.12)))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.radius)
+                            .strokeBorder(mine ? Color.clear : segment.speaker == nil ? Theme.border : color.opacity(0.35)))
                         .help(Meeting.clock(segment.start))
+                        .contextMenu {
+                            if !mine, let voices = meeting.speakers, !voices.isEmpty {
+                                Menu("Esta fala é de…") {
+                                    ForEach(0..<voices.count, id: \.self) { voice in
+                                        Button { reassign(index, voice) } label: {
+                                            if segment.speaker == voice { Label(meeting.name(of: voice), systemImage: "checkmark") } else { Text(meeting.name(of: voice)) }
+                                        }
+                                    }
+                                    Divider()
+                                    Button("Nova voz") { reassign(index, nil) }
+                                }
+                            }
+                        }
                 }
                 .frame(maxWidth: 560, alignment: mine ? .trailing : .leading)
                 .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
             }
         }
+    }
+}
+
+/// The voices found on the others' track: hear one, name it, or merge it into another.
+private struct VoicesPanel: View {
+    @ObservedObject var meetings: MeetingCenter
+    let meeting: Meeting
+    @Binding var renamed: Bool
+    @StateObject private var player = VoicePlayer()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("VOZES", systemImage: "person.wave.2")
+                    .font(Theme.mono(10, .medium)).tracking(0.8)
+                    .foregroundStyle(Theme.accent)
+                Spacer()
+                Text("Ouça cada voz e dê um nome. Duas vozes da mesma pessoa? Junte.")
+                    .font(Theme.body(12))
+                    .foregroundStyle(Theme.secondary)
+            }
+            ForEach(0..<(meeting.speakers?.count ?? 0), id: \.self) { speaker in
+                VoiceRow(meeting: meeting, speaker: speaker, player: player,
+                         rename: { name in
+                             meetings.rename(meeting.id, speaker: speaker, to: name)
+                             renamed = true
+                         },
+                         merge: { target in
+                             player.stop()
+                             meetings.merge(meeting.id, speaker: speaker, into: target)
+                             renamed = true
+                         })
+            }
+        }
+        .card(padding: 16)
+        .onDisappear { player.stop() }
+    }
+}
+
+private struct VoiceRow: View {
+    let meeting: Meeting
+    let speaker: Int
+    @ObservedObject var player: VoicePlayer
+    let rename: (String) -> Void
+    let merge: (Int) -> Void
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    private var count: Int { meeting.segments.filter { $0.speaker == speaker }.count }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(VoiceColors.color(speaker)).frame(width: 10, height: 10)
+            Button {
+                player.toggle(meeting: meeting, speaker: speaker)
+            } label: {
+                Image(systemName: player.playing == speaker ? "stop.fill" : "play.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(width: 26, height: 26)
+                    .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.hover))
+            }
+            .buttonStyle(.plain)
+            .help("Ouvir esta voz")
+            TextField("Pessoa \(speaker + 1)", text: $name)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.background))
+                .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(focused ? Theme.accent : Theme.border))
+                .frame(maxWidth: 240)
+                .onSubmit { commit() }
+                .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+            Text(count == 1 ? "1 fala" : "\(count) falas")
+                .font(Theme.body(12))
+                .foregroundStyle(Theme.secondary)
+            Spacer()
+            if (meeting.speakers?.count ?? 0) > 1 {
+                Menu("Juntar com…") {
+                    ForEach(0..<(meeting.speakers?.count ?? 0), id: \.self) { other in
+                        if other != speaker { Button(meeting.name(of: other)) { merge(other) } }
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+        }
+        .onAppear { name = meeting.speakers.map { speaker < $0.count ? $0[speaker] : "" } ?? "" }
+        .onChange(of: meeting.speakers) { _, names in name = names.map { speaker < $0.count ? $0[speaker] : "" } ?? "" }
+    }
+
+    private func commit() {
+        let current = meeting.speakers.map { speaker < $0.count ? $0[speaker] : "" } ?? ""
+        if name.trimmingCharacters(in: .whitespaces) != current { rename(name) }
+    }
+}
+
+/// Plays up to 6 s of a voice: its longest segment, read from the others' track.
+@MainActor
+final class VoicePlayer: ObservableObject {
+    @Published private(set) var playing: Int?
+    private var player: AVAudioPlayer?
+    private var finish: DispatchWorkItem?
+
+    func toggle(meeting: Meeting, speaker: Int) {
+        if playing == speaker {
+            stop()
+            return
+        }
+        stop()
+        guard let longest = meeting.segments.filter({ $0.speaker == speaker }).max(by: { $0.end - $0.start < $1.end - $1.start }) else { return }
+        let samples = WavFileWriter.samples(in: meeting.systemURL, from: longest.start, to: min(longest.end, longest.start + 6))
+        guard let player = try? AVAudioPlayer(data: AudioRecorder.wavData(from: samples)) else { return }
+        self.player = player
+        player.play()
+        playing = speaker
+        let done = DispatchWorkItem { [weak self] in self?.playing = nil }
+        finish = done
+        DispatchQueue.main.asyncAfter(deadline: .now() + player.duration + 0.1, execute: done)
+    }
+
+    func stop() {
+        finish?.cancel()
+        player?.stop()
+        player = nil
+        playing = nil
     }
 }
 

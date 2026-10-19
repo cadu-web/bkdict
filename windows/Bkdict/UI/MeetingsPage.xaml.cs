@@ -11,6 +11,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Bkdict.Core;
+using NAudio.Wave;
 
 namespace Bkdict.UI;
 
@@ -30,6 +31,9 @@ public partial class MeetingsPage : UserControl
     private TextBlock? progressText;
     private ProgressBar? progressBar;
     private readonly HashSet<Meeting> watched = new();
+    /// Meetings whose voices were renamed or merged since the summary was written.
+    private readonly HashSet<Meeting> namesChanged = new();
+    private WaveOutEvent? player;
 
     private static bool Animate => SystemParameters.ClientAreaAnimation;
 
@@ -78,7 +82,8 @@ public partial class MeetingsPage : UserControl
                 return;
             }
             if (meeting != selected) return;
-            if (e.PropertyName == nameof(Meeting.Progress) && meeting.Status == renderedStatus && progressText != null)
+            if (e.PropertyName is nameof(Meeting.Progress) or nameof(Meeting.SeparatingDetail)
+                && meeting.Status == renderedStatus && progressText != null)
             {
                 progressText.Text = ProgressLabel(meeting);
                 if (progressBar != null) progressBar.Value = meeting.Progress;
@@ -286,6 +291,7 @@ public partial class MeetingsPage : UserControl
     {
         Meeting.Recording => "Gravando",
         Meeting.Transcribing => $"Transcrevendo {(int)Math.Round(meeting.Progress * 100)}%",
+        Meeting.Separating => meeting.SeparatingDetail ?? "Separando as vozes",
         Meeting.Summarizing => "Resumindo",
         Meeting.Failed => "Falhou",
         _ => meeting.SystemAudio ? "Pronta" : "Só o seu microfone",
@@ -573,7 +579,13 @@ public partial class MeetingsPage : UserControl
 
     private UIElement TranscriptContent(Meeting meeting)
     {
-        if (meeting.Segments.Count > 0) return Conversation(meeting.Segments);
+        if (meeting.Segments.Count > 0)
+        {
+            var stack = new StackPanel();
+            if (meeting.Speakers.Count > 0) stack.Children.Add(VoicesPanel(meeting));
+            stack.Children.Add(Conversation(meeting));
+            return stack;
+        }
         if (meeting.Status == Meeting.Transcribing)
         {
             var stack = new StackPanel();
@@ -585,21 +597,24 @@ public partial class MeetingsPage : UserControl
     }
 
     /// What you said on the right, the others on the left; name and time when the speaker changes.
-    private UIElement Conversation(List<MeetingSegment> segments)
+    private UIElement Conversation(Meeting meeting)
     {
+        var segments = meeting.Segments;
         var stack = new StackPanel();
         for (int i = 0; i < segments.Count; i++)
         {
             var segment = segments[i];
             bool mine = segment.Source != "them";
-            bool first = i == 0 || segments[i - 1].Source != segment.Source;
+            bool first = i == 0 || meeting.LabelFor(segments[i - 1]) != meeting.LabelFor(segment);
             var align = mine ? HorizontalAlignment.Right : HorizontalAlignment.Left;
             var item = new StackPanel { HorizontalAlignment = align, MaxWidth = 560, Margin = new Thickness(0, 0, 0, 6) };
             if (first)
             {
                 var who = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = align,
                                            Margin = new Thickness(0, i == 0 ? 0 : 10, 0, 4) };
-                who.Children.Add(Text(mine ? "Você" : "Eles", 12, FontWeights.SemiBold, mine ? "BrandAccent" : "BrandText"));
+                var name = Text(meeting.LabelFor(segment), 12, FontWeights.SemiBold, mine ? "BrandAccent" : "BrandText");
+                if (segment.Speaker is { } voice) name.Foreground = VoiceInk(voice);
+                who.Children.Add(name);
                 var time = Text(Meeting.Clock(segment.Start), 10, fg: "BrandSecondary", font: "MonoFont");
                 time.VerticalAlignment = VerticalAlignment.Center;
                 time.Margin = new Thickness(6, 0, 0, 0);
@@ -617,17 +632,206 @@ public partial class MeetingsPage : UserControl
                                       HorizontalAlignment = align, BorderThickness = new Thickness(mine ? 0 : 1) };
             bubble.SetResourceReference(Border.BackgroundProperty, mine ? "BrandAccentTint" : "BrandCard");
             bubble.SetResourceReference(Border.BorderBrushProperty, "BrandBorder");
+            if (segment.Speaker is { } tone) bubble.Background = VoiceTint(tone);
+            if (!mine) bubble.ContextMenu = SegmentVoiceMenu(meeting, segment);
             item.Children.Add(bubble);
             stack.Children.Add(item);
         }
         return stack;
     }
 
+    // MARK: - Voices
+
+    /// Five quiet tones that tell the voices apart; never the Bordô, which is "Você".
+    private static readonly uint[] VoiceTones = { 0x4F6B8A, 0x5E7A5A, 0x8A6E4B, 0x6E5A8A, 0x4F7F80 };
+
+    private static Brush VoiceInk(int voice) => Brand.Brush(VoiceTones[voice % VoiceTones.Length]);
+
+    private static Brush VoiceTint(int voice)
+    {
+        var color = ((SolidColorBrush)VoiceInk(voice)).Color;
+        return new SolidColorBrush(Color.FromArgb(0x24, color.R, color.G, color.B));
+    }
+
+    /// One row per voice: play a sample, give it a name, or merge it into another voice.
+    private UIElement VoicesPanel(Meeting meeting)
+    {
+        var stack = new StackPanel();
+        var title = Text("VOZES", 10, FontWeights.Medium, "BrandAccent", "MonoFont");
+        title.Margin = new Thickness(0, 0, 0, 10);
+        stack.Children.Add(title);
+        var hint = Text("Dê nome a cada voz; o resumo passa a usar os nomes.", 12, fg: "BrandSecondary", wrap: true);
+        hint.Margin = new Thickness(0, 0, 0, 10);
+        stack.Children.Add(hint);
+
+        for (int voice = 0; voice < meeting.Speakers.Count; voice++)
+        {
+            int index = voice;
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8), LastChildFill = true };
+
+            var dot = new Ellipse { Width = 10, Height = 10, Fill = VoiceInk(index), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+            DockPanel.SetDock(dot, Dock.Left);
+            row.Children.Add(dot);
+
+            Border? playButton = null;
+            playButton = IconButton("\uE768", "Ouvir esta voz", true, () => PlaySample(meeting, index, playButton!));
+            playButton.Margin = new Thickness(0, 0, 8, 0);
+            DockPanel.SetDock(playButton, Dock.Left);
+            row.Children.Add(playButton);
+
+            var others = Enumerable.Range(0, meeting.Speakers.Count).Where(v => v != index).ToList();
+            if (others.Count > 0)
+            {
+                var merge = SecondaryButton("Juntar com…", () => { });
+                merge.Margin = new Thickness(8, 0, 0, 0);
+                var menu = new ContextMenu();
+                foreach (var other in others)
+                {
+                    int target = other;
+                    var item = new MenuItem { Header = meeting.VoiceName(target) };
+                    item.Click += (_, _) =>
+                    {
+                        Diarizer.Merge(meeting, index, target);
+                        VoicesChanged(meeting);
+                    };
+                    menu.Items.Add(item);
+                }
+                merge.ContextMenu = menu;
+                merge.MouseLeftButtonUp += (_, _) => { menu.PlacementTarget = merge; menu.IsOpen = true; };
+                DockPanel.SetDock(merge, Dock.Right);
+                row.Children.Add(merge);
+            }
+
+            var name = new TextBox
+            {
+                Text = meeting.Speakers[index], FontSize = 13, Padding = new Thickness(8, 5, 8, 5), VerticalContentAlignment = VerticalAlignment.Center,
+                ToolTip = $"Nome de {meeting.VoiceName(index)}",
+            };
+            name.SetResourceReference(Control.FontFamilyProperty, "BodyFont");
+            var placeholder = $"Pessoa {index + 1}";
+            void Save()
+            {
+                var value = name.Text.Trim();
+                if (index >= meeting.Speakers.Count || meeting.Speakers[index] == value) return;
+                meeting.Speakers[index] = value;
+                VoicesChanged(meeting);
+            }
+            name.LostFocus += (_, _) => Save();
+            name.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Save(); Keyboard.ClearFocus(); } };
+            // A hint for an unnamed voice, drawn under the empty box.
+            var field = new Grid();
+            var hintText = Text(placeholder, 13, fg: "BrandSecondary");
+            hintText.Margin = new Thickness(10, 0, 0, 0);
+            hintText.VerticalAlignment = VerticalAlignment.Center;
+            hintText.IsHitTestVisible = false;
+            hintText.Visibility = name.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            name.TextChanged += (_, _) => hintText.Visibility = name.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            field.Children.Add(name);
+            field.Children.Add(hintText);
+            row.Children.Add(field);
+            stack.Children.Add(row);
+        }
+
+        if (namesChanged.Contains(meeting))
+        {
+            var redo = PrimaryButton("\uE72C", "Refazer o resumo com os nomes", () =>
+            {
+                namesChanged.Remove(meeting);
+                model.ResummarizeMeeting?.Invoke(meeting);
+            });
+            redo.HorizontalAlignment = HorizontalAlignment.Left;
+            redo.Margin = new Thickness(0, 6, 0, 0);
+            stack.Children.Add(redo);
+        }
+
+        var card = Card(stack);
+        card.Margin = new Thickness(0, 0, 0, 16);
+        return card;
+    }
+
+    /// Right click on someone else's line: "Esta fala é de…" each voice, or a new one. Changes only that line.
+    private ContextMenu SegmentVoiceMenu(Meeting meeting, MeetingSegment segment)
+    {
+        var menu = new ContextMenu();
+        menu.Items.Add(new MenuItem { Header = "Esta fala é de…", IsEnabled = false });
+        menu.Items.Add(new Separator());
+        for (int voice = 0; voice < meeting.Speakers.Count; voice++)
+        {
+            int target = voice;
+            var item = new MenuItem { Header = meeting.VoiceName(target), IsCheckable = true, IsChecked = segment.Speaker == target };
+            item.Click += (_, _) =>
+            {
+                segment.Speaker = target;
+                Diarizer.DropEmptyVoices(meeting);
+                VoicesChanged(meeting);
+            };
+            menu.Items.Add(item);
+        }
+        var fresh = new MenuItem { Header = "Nova voz" };
+        fresh.Click += (_, _) =>
+        {
+            meeting.Speakers.Add("");
+            segment.Speaker = meeting.Speakers.Count - 1;
+            Diarizer.DropEmptyVoices(meeting);
+            VoicesChanged(meeting);
+        };
+        menu.Items.Add(fresh);
+        return menu;
+    }
+
+    private void VoicesChanged(Meeting meeting)
+    {
+        namesChanged.Add(meeting);
+        MeetingStore.Save(meeting);
+        meeting.NotifySegmentsChanged();
+        Render();
+    }
+
+    /// Plays up to 6 s of the voice's longest stretch, from system.wav; a second click stops it.
+    private void PlaySample(Meeting meeting, int voice, Border button)
+    {
+        if (player != null)
+        {
+            player.Stop();
+            return;
+        }
+        var longest = meeting.Segments.Where(s => s.Speaker == voice).OrderByDescending(s => s.End - s.Start).FirstOrDefault();
+        if (longest == null || !System.IO.File.Exists(meeting.SystemPath)) return;
+        try
+        {
+            var samples = new MeetingTrack(meeting.SystemPath).Read(longest.Start, Math.Min(longest.End, longest.Start + 6));
+            var bytes = new byte[samples.Length * 2];
+            Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
+            var stream = new RawSourceWaveStream(new System.IO.MemoryStream(bytes), new WaveFormat(16000, 16, 1));
+            var output = new WaveOutEvent();
+            output.Init(stream);
+            var glyph = (button.Child as TextBlock);
+            if (glyph != null) glyph.Text = "\uE71A";
+            output.PlaybackStopped += (_, _) => Dispatcher.InvokeAsync(() =>
+            {
+                output.Dispose();
+                stream.Dispose();
+                player = null;
+                if (glyph != null) glyph.Text = "\uE768";
+            });
+            player = output;
+            output.Play();
+        }
+        catch (Exception e)
+        {
+            player = null;
+            Log.Write($"Voice sample: {e.Message}");
+        }
+    }
+
     // MARK: - Loading
 
-    private static string ProgressLabel(Meeting meeting) => meeting.Status == Meeting.Transcribing
-        ? $"Transcrevendo o que cada um disse… {(int)Math.Round(meeting.Progress * 100)}%"
-        : "Escrevendo o resumo…";
+    private static string ProgressLabel(Meeting meeting) => meeting.Status switch
+    {
+        Meeting.Transcribing => $"Transcrevendo o que cada um disse… {(int)Math.Round(meeting.Progress * 100)}%",
+        Meeting.Separating => (meeting.SeparatingDetail ?? "Separando as vozes") + "…",
+        _ => "Escrevendo o resumo…",
+    };
 
     private UIElement ProgressLine(Meeting meeting)
     {
