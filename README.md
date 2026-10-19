@@ -31,6 +31,10 @@ Você escolhe onde cada parte roda:
 - **Snippets:** uma frase-gatilho ("meu email") insere um texto fixo.
 - **Ajuste com IA:** remove "é…", "tipo" e repetições, e corrige a pontuação.
 - **Histórico** de ditados, estatísticas e tema claro, escuro ou do sistema.
+- **Reuniões:** grava o seu microfone e o áudio do computador, transcreve separando **Você** de **Eles** (com o eco do
+  alto-falante removido) e resume em decisões, tarefas e pontos em aberto. Tudo neste computador; detalhes em
+  [`docs/reunioes.md`](docs/reunioes.md). No Mac, o áudio dos outros exige macOS 14.2+ e a permissão "Gravação de
+  Áudio do Sistema".
 
 ## Modelos
 

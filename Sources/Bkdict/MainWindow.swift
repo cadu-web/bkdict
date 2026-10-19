@@ -5,10 +5,12 @@ import SwiftUI
 /// The app's main window. The Dock icon is shown only while it is open.
 final class MainWindowController: NSObject, NSWindowDelegate {
     private let model: AppModel
+    private let meetings: MeetingCenter
     private var window: NSWindow?
 
-    init(model: AppModel) {
+    init(model: AppModel, meetings: MeetingCenter) {
         self.model = model
+        self.meetings = meetings
     }
 
     func show() {
@@ -24,7 +26,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             window.titlebarAppearsTransparent = true
             window.minSize = NSSize(width: 820, height: 560)
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: MainView(model: model))
+            window.contentView = NSHostingView(rootView: MainView(model: model, meetings: meetings))
             window.center()
             window.setFrameAutosaveName("BkdictMain")
             window.delegate = self
@@ -43,6 +45,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 enum SidebarItem: String, CaseIterable, Identifiable {
     case home = "Início"
     case history = "Histórico"
+    case meetings = "Reuniões"
     case transforms = "Transforms"
     case dictionary = "Dicionário"
     case snippets = "Snippets"
@@ -55,6 +58,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .home: return "house"
         case .history: return "clock"
+        case .meetings: return "person.2.wave.2"
         case .transforms: return "wand.and.stars"
         case .dictionary: return "character.book.closed"
         case .snippets: return "text.badge.plus"
@@ -65,7 +69,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
     /// Items grouped under a quiet label in the sidebar.
     static let groups: [(String?, [SidebarItem])] = [
-        (nil, [.home, .history]),
+        (nil, [.home, .history, .meetings]),
         ("Ferramentas", [.transforms, .dictionary, .snippets]),
         ("Configurar", [.models, .settings]),
     ]
@@ -73,6 +77,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 struct MainView: View {
     @ObservedObject var model: AppModel
+    let meetings: MeetingCenter
     /// Opens on Início, or on the page named by the `-section` launch argument (e.g. `-section Modelos`).
     @State private var section = SidebarItem(rawValue: UserDefaults.standard.string(forKey: "section") ?? "") ?? .home
 
@@ -86,6 +91,7 @@ struct MainView: View {
                 switch section {
                 case .home: HomeView(model: model, showHistory: { section = .history }, showModels: { section = .models })
                 case .history: HistoryView(model: model)
+                case .meetings: MeetingsView(meetings: meetings)
                 case .transforms: TransformsView(model: model)
                 case .dictionary: DictionaryView(model: model)
                 case .snippets: SnippetsView(model: model)

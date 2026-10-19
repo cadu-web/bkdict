@@ -80,6 +80,66 @@ enum LLM {
         return Double(got.filter(known.contains).count) / Double(got.count) >= 0.7
     }
 
+    /// Tested with the Qwen 2.5 3B: a template to fill, and the rule that "Eles" lines belong to the others, keep
+    /// small models from skipping sections or giving the others' tasks to "você".
+    private static let meetingInstructions = """
+    Você resume reuniões para a pessoa que gravou. A transcrição vem com uma fala por linha: "[mm:ss] Você: …" é a própria pessoa; "[mm:ss] Eles: …" são os outros participantes. Quem diz "eu faço" numa linha "Eles" é um participante, não você.
+
+    Escreva em segunda pessoa: "você" para quem gravou e "os participantes" para os outros (ou o nome, se alguém for chamado pelo nome). Nas Tarefas, comece cada linha com o dono: "Você:" ou "Participantes:".
+
+    Responda preenchendo exatamente o modelo que vem depois da transcrição: as quatro seções, nessa ordem, sem nada antes ou depois. Use só o que foi dito; não invente nomes, datas, números nem decisões. Seção sem conteúdo leva "- Nenhuma.".
+    """
+
+    private static let meetingTemplate = """
+    Modelo a preencher:
+    ## Resumo
+    (3 a 6 frases sobre o que foi tratado)
+
+    ## Decisões
+    - (cada decisão tomada, uma por linha)
+
+    ## Tarefas
+    - (Você: ou Participantes:, o quê, e o prazo se foi dito)
+
+    ## Pontos em aberto
+    - (o que ficou sem resposta ou sem decisão)
+    """
+
+    private static let meetingNotesInstructions = """
+    Você recebe um trecho da transcrição de uma reunião, uma fala por linha no formato \
+    [mm:ss] Você|Eles: texto ("Você" é quem gravou; "Eles", os outros participantes). Anote, no idioma \
+    da reunião e só com o que foi dito, os assuntos, as decisões, as tarefas (Você: ou Participantes:, o \
+    quê, prazo) e os pontos em aberto deste trecho, em tópicos curtos.
+    """
+
+    /// The meeting summary in Markdown. A long transcript is noted in parts first: small local models have a
+    /// short context window and would otherwise read only its beginning.
+    static func summarizeMeeting(_ transcript: String) async throws -> String {
+        let limit = 8_000
+        guard transcript.count > limit else {
+            return try await complete(system: meetingInstructions, user: "Transcrição:\n\(transcript)\n\n\(meetingTemplate)")
+        }
+        var parts: [String] = [], current = ""
+        for line in transcript.split(separator: "\n", omittingEmptySubsequences: false) {
+            if current.count + line.count + 1 > limit, !current.isEmpty {
+                parts.append(current)
+                current = ""
+            }
+            current += line + "\n"
+        }
+        if !current.isEmpty { parts.append(current) }
+        var notes: [String] = []
+        for (index, part) in parts.enumerated() {
+            let note = try await complete(system: meetingNotesInstructions, user: part)
+            notes.append("Parte \(index + 1) de \(parts.count):\n\(note)")
+        }
+        return try await complete(
+            system: meetingInstructions,
+            user: "Em vez da transcrição completa, estas são as anotações de cada parte da reunião, em ordem:\n\n"
+                + notes.joined(separator: "\n\n") + "\n\n\(meetingTemplate)"
+        )
+    }
+
     /// Applies a spoken instruction to the selected text, or writes new text when nothing is selected.
     static func command(_ instruction: String, selection: String?) async throws -> String {
         guard let selection, !selection.isEmpty else {

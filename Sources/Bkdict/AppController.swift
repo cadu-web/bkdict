@@ -18,7 +18,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let whisper = WhisperServer()
     private let recorder = AudioRecorder()
     private let overlay = OverlayWindow()
-    private lazy var mainWindow = MainWindowController(model: model)
+    @MainActor private lazy var meetings = MeetingCenter()
+    private lazy var mainWindow = MainWindowController(model: model, meetings: MainActor.assumeIsolated { meetings })
+    private let meetingItem = NSMenuItem(title: "Gravar reunião", action: nil, keyEquivalent: "")
     private let hotkey = HotkeyMonitor()
     /// Checks the release appcast on its own schedule (SUEnableAutomaticChecks) and installs updates on request.
     private let updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -66,6 +68,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             if self?.model.isReady == true { self?.setReady() }
         }
         setUpDictationBar()
+        setUpMeetings()
         model.onEngineChange = { [weak self] in
             Task { @MainActor in await self?.prepareEngine() }
         }
@@ -126,6 +129,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { meetings.stopForQuit() }
         whisper.stop()
         model.ollama.stop()
     }
@@ -217,6 +221,29 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func captureSelection() {
         session?.selection = Task { @MainActor in await TextInserter.selectedText() }
+    }
+
+    /// Meetings share the dictation's transcription and corrections, and show in the bar and the menu.
+    @MainActor
+    private func setUpMeetings() {
+        meetings.transcribe = { [weak self] wav in
+            guard let self else { return "" }
+            return try await self.transcribe(wav)
+        }
+        meetings.correct = { [weak self] text in
+            TextProcessor.apply(text, replacements: self?.model.replacements ?? [], snippets: [])
+        }
+        overlay.state.onToggleMeeting = { [weak self] in self?.toggleMeeting() }
+        meetings.$recordingSince.sink { [weak self] since in
+            self?.overlay.state.meetingSince = since
+            self?.meetingItem.title = since == nil ? "Gravar reunião" : "Parar gravação da reunião"
+            self?.overlay.layout()
+        }
+        .store(in: &subscriptions)
+    }
+
+    @MainActor @objc private func toggleMeeting() {
+        if meetings.recordingSince == nil { meetings.start() } else { meetings.stop() }
     }
 
     /// The bar's buttons and menu, and the settings it follows.
@@ -406,6 +433,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let copyLast = NSMenuItem(title: "Copiar última transcrição", action: #selector(copyLast), keyEquivalent: "c")
         copyLast.target = self
         menu.addItem(copyLast)
+
+        meetingItem.action = #selector(toggleMeeting)
+        meetingItem.target = self
+        menu.addItem(meetingItem)
 
         let update = NSMenuItem(title: "Procurar atualizações…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
         update.target = updater

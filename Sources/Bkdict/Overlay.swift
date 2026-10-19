@@ -34,6 +34,8 @@ final class OverlayState: ObservableObject {
     @Published var microphone = Settings.microphone
     @Published var edge = Settings.dictationBarEdge
     @Published var dragging = false
+    /// When the meeting being recorded started; the idle bar then shows the time and a stop button.
+    @Published var meetingSince: Date?
 
     var isRecording: Bool { [.listening, .handsFree, .command].contains(phase) }
 
@@ -45,6 +47,7 @@ final class OverlayState: ObservableObject {
     var onOpenApp: () -> Void = {}
     var onHideForAnHour: () -> Void = {}
     var onSelectMicrophone: (String) -> Void = { _ in }
+    var onToggleMeeting: () -> Void = {}
     // Wired by OverlayWindow, which owns the panel.
     var onDragChanged: () -> Void = {}
     var onDragEnded: () -> Void = {}
@@ -77,6 +80,8 @@ final class OverlayWindow {
         static let hoveredSide = NSSize(width: 52, height: 112)
         static let recordingSide = NSSize(width: 40, height: 104)
         static let busySide = NSSize(width: 40, height: 40)
+        static let meeting = NSSize(width: 112, height: 28)
+        static let meetingSide = NSSize(width: 32, height: 84)
     }
 
     init() {
@@ -144,8 +149,9 @@ final class OverlayWindow {
         switch state.phase {
         case .hidden:
             let snoozed = hiddenUntil.map { $0 > Date() } ?? false
-            guard showsIdleBar, !snoozed else { return nil }
+            guard (showsIdleBar && !snoozed) || state.meetingSince != nil else { return nil }
             if state.hovering { return side ? Size.hoveredSide : Size.hovered }
+            if state.meetingSince != nil { return side ? Size.meetingSide : Size.meeting }
             return side ? Size.idleSide : Size.idle
         case .listening, .handsFree, .command:
             return side ? Size.recordingSide : Size.recording
@@ -253,6 +259,8 @@ private struct BarView: View {
                     .onEnded { _ in state.onDragEnded() }
             )
             .contextMenu {
+                Button(state.meetingSince == nil ? "Gravar reunião" : "Parar gravação da reunião", action: state.onToggleMeeting)
+                Divider()
                 Button("Colar a última transcrição", action: state.onPasteLast)
                 Menu("Microfone") { MicrophoneMenu(state: state) }
                 Menu("Posição") {
@@ -268,13 +276,19 @@ private struct BarView: View {
             }
     }
 
-    private var isIdleHandle: Bool { state.phase == .hidden && !state.hovering }
+    private var isIdleHandle: Bool { state.phase == .hidden && !state.hovering && state.meetingSince == nil }
 
     @ViewBuilder private var content: some View {
         let side = state.edge != .bottom
         switch state.phase {
         case .hidden:
-            if state.hovering { side ? AnyView(idleSide) : AnyView(idle) } else { Color.clear }
+            if state.hovering {
+                side ? AnyView(idleSide) : AnyView(idle)
+            } else if let since = state.meetingSince {
+                AnyView(MeetingPill(since: since, vertical: side, stop: state.onToggleMeeting))
+            } else {
+                Color.clear
+            }
         case .listening, .handsFree, .command:
             side ? AnyView(recordingSide) : AnyView(recording)
         default:
@@ -496,5 +510,54 @@ private struct DockGuideView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The idle bar while a meeting is recorded: a dot, the elapsed time and a stop button.
+private struct MeetingPill: View {
+    let since: Date
+    let vertical: Bool
+    let stop: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let elapsed = Int(context.date.timeIntervalSince(since))
+            let minutes = String(format: "%02d", elapsed / 60), seconds = String(format: "%02d", elapsed % 60)
+            if vertical {
+                VStack(spacing: 4) {
+                    dot
+                    Text(minutes).font(Theme.mono(11, .medium)).foregroundStyle(Theme.onAccent)
+                    Text(seconds).font(Theme.mono(11, .medium)).foregroundStyle(Theme.onAccent)
+                    stopButton
+                }
+                .padding(.vertical, 6)
+            } else {
+                HStack(spacing: 8) {
+                    dot
+                    Text("\(minutes):\(seconds)").font(Theme.mono(12, .medium)).foregroundStyle(Theme.onAccent)
+                    Spacer(minLength: 0)
+                    stopButton
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+            }
+        }
+        .help("Gravando reunião")
+    }
+
+    private var dot: some View {
+        Circle().fill(Theme.accentOnTinta).frame(width: 8, height: 8)
+    }
+
+    private var stopButton: some View {
+        Button(action: stop) {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.onAccent)
+                .frame(width: 20, height: 20)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.accentOnTinta))
+        }
+        .buttonStyle(.plain)
+        .help("Parar gravação da reunião")
     }
 }

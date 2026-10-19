@@ -15,6 +15,10 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     static let sampleRate: Double = 16_000
 
     var onLevel: (Float) -> Void = { _ in }
+    /// Every chunk as it arrives, for recordings written straight to disk (meetings).
+    var onSamples: (([Float]) -> Void)?
+    /// Off for long recordings that stream through `onSamples` instead of piling up in memory.
+    var keepsSamples = true
 
     private var session: AVCaptureSession?
     /// Delivers the buffers in order; `stop()` drains it so the last words are not cut.
@@ -64,7 +68,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
                                           dataPointerOut: &pointer) == kCMBlockBufferNoErr, let pointer else { return }
         let count = length / MemoryLayout<Float>.size
         let chunk = pointer.withMemoryRebound(to: Float.self, capacity: count) { Array(UnsafeBufferPointer(start: $0, count: count)) }
-        lock.withLock { samples.append(contentsOf: chunk) }
+        if keepsSamples { lock.withLock { samples.append(contentsOf: chunk) } }
+        onSamples?(chunk)
 
         let power = chunk.reduce(0) { $0 + $1 * $1 } / Float(max(chunk.count, 1))
         onLevel(sqrt(power))
