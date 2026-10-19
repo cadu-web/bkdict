@@ -262,36 +262,70 @@ private struct DictationRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                Text(item.date, format: .dateTime.hour().minute())
-                    .font(Theme.body(12).monospacedDigit())
-                    .foregroundStyle(Theme.secondary)
-                    .frame(width: 48, alignment: .leading)
-                Text(item.text)
-                    .foregroundStyle(Theme.text)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: 10) {
-                    Button {
-                        copyToClipboard(item.text)
-                        copied = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
-                    } label: {
-                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    }
-                    .help("Copiar")
-                    Button(action: onDelete) { Image(systemName: "trash") }
-                        .help("Apagar")
+            HStack(alignment: .center, spacing: 16) {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    Text(item.date, format: .dateTime.hour().minute())
+                        .font(Theme.body(12).monospacedDigit())
+                        .foregroundStyle(Theme.secondary)
+                        .frame(width: 48, alignment: .leading)
+                    Text(item.text)
+                        .foregroundStyle(Theme.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(copied ? Theme.accent : Theme.secondary)
+                HStack(spacing: 4) {
+                    RowAction(systemImage: copied ? "checkmark" : "doc.on.doc", help: copied ? "Copiado" : "Copiar",
+                              tint: copied ? Theme.accent : nil) {
+                        copyToClipboard(item.text)
+                        withAnimation(.easeOut(duration: 0.15)) { copied = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                            withAnimation(.easeOut(duration: 0.15)) { copied = false }
+                        }
+                    }
+                    RowAction(systemImage: "trash", help: "Apagar", destructive: true, action: onDelete)
+                }
                 .opacity(hovering || copied ? 1 : 0)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(hovering ? Theme.hover : .clear)
+            .background(Theme.hover.opacity(hovering ? 1 : 0))
+            // The row being pointed at gets a Bordô mark on its edge, like a selection.
+            .overlay(alignment: .leading) {
+                Rectangle().fill(Theme.accent).frame(width: 2).opacity(hovering ? 1 : 0)
+            }
             if divider { Divider().overlay(Theme.border).padding(.leading, 80) }
         }
+        .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// A row's icon button: a framed square that lights up under the pointer (Bordô for destructive ones).
+private struct RowAction: View {
+    let systemImage: String
+    let help: String
+    var tint: Color? = nil
+    var destructive = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tint ?? (hovering ? (destructive ? Theme.accent : Theme.text) : Theme.secondary))
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: Theme.radius)
+                    .fill(hovering ? (destructive ? Theme.accentTint : Theme.hover) : Theme.card))
+                .overlay(RoundedRectangle(cornerRadius: Theme.radius)
+                    .strokeBorder(hovering && destructive ? Theme.accent.opacity(0.4) : Theme.border))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
