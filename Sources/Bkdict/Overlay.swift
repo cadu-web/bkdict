@@ -95,7 +95,7 @@ final class OverlayWindow {
         static let busy = NSSize(width: 260, height: 40)
         static let unplaced = NSSize(width: 380, height: 124)
         // On a side the whole bar stands up.
-        // Just the two buttons; what dictates shows in a hint beside it (HintPanel).
+        // Just the two buttons; "Ditar" shows in a hint beside it (HintPanel).
         static let hoveredSide = NSSize(width: 40, height: 70)
         static let recordingSide = NSSize(width: 40, height: 104)
         static let busySide = NSSize(width: 40, height: 40)
@@ -181,14 +181,14 @@ final class OverlayWindow {
         layoutHint()
     }
 
-    /// On a side, the hovered bar is only its buttons; "Ditar" and its keys sit beside it, at the microphone.
+    /// On a side, the hovered bar is only its buttons; "Ditar" sits beside it, at the microphone.
     private func layoutHint() {
         guard state.phase == .hidden, state.hovering, state.edge != .bottom, state.meetingSince == nil, state.offer == nil,
               !state.mistake, dragOffset == nil, panel.isVisible else {
             hintPanel.hide()
             return
         }
-        hintPanel.show(beside: panel.frame, edge: state.edge, keys: state.dictateKeys)
+        hintPanel.show(beside: panel.frame, edge: state.edge)
     }
 
     /// The offer slides in from the edge, compact, then opens into the full card.
@@ -868,7 +868,7 @@ private struct MeetingControls: View {
 }
 
 /// The live transcript: a floating panel next to the bar while a meeting records.
-/// "Ditar ⇧ dir. →" beside the hovered bar on a side, pointing at it. It never takes the mouse, so the bar keeps its hover.
+/// "Ditar →" beside the hovered bar on a side, pointing at it. It never takes the mouse, so the bar keeps its hover.
 private final class HintPanel {
     private let panel: NSPanel
 
@@ -883,8 +883,8 @@ private final class HintPanel {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
     }
 
-    func show(beside bar: NSRect, edge: DockEdge, keys: [String]) {
-        let view = NSHostingView(rootView: HintView(edge: edge, keys: keys))
+    func show(beside bar: NSRect, edge: DockEdge) {
+        let view = NSHostingView(rootView: HintView(edge: edge))
         let size = view.fittingSize
         // Level with the microphone, the bar's first button (6 pt padding + half of 26).
         let y = (bar.maxY - 19 - size.height / 2).rounded()
@@ -907,7 +907,6 @@ private final class HintPanel {
 
 private struct HintView: View {
     let edge: DockEdge
-    let keys: [String]
 
     var body: some View {
         HStack(spacing: 8) {
@@ -915,7 +914,6 @@ private struct HintView: View {
             Text("Ditar")
                 .font(Theme.body(13, .medium))
                 .foregroundStyle(Theme.onAccent)
-            if !keys.isEmpty { KeyCaps(keys: keys, onAccent: true) }
             if edge == .right { arrow }
         }
         .padding(.horizontal, 12)
