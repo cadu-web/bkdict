@@ -189,8 +189,12 @@ private struct SidebarButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
+                // Every symbol fitted in the same box: wide ones (Reuniões) would otherwise spill out and break the column.
                 Image(systemName: item.icon)
-                    .font(Theme.body(13, .medium))
+                    .resizable()
+                    .scaledToFit()
+                    .fontWeight(.medium)
+                    .frame(width: 16, height: 15)
                     .frame(width: 18)
                 Text(item.rawValue)
                     .font(Theme.body(13, selected ? .semibold : .regular))
